@@ -2,46 +2,52 @@ require 'mortgage_calc'
 
 # this module does the following:
 # defines Lifecastor::Family class to represent a family under financial planning and other helper classes
-# defines Lifecastor.plan method to make a financial plan for the family
+# defines Lifecastor.run method to make a financial forecast for the family
 
 module Lifecastor
 
   # global constents
-  INFINITY = 99999999999999999999999999999
+  INFINITY = 99999999999999999
   
-  # An exception of this class indicates that a family is over-spent.
-  class Bankrupt < StandardError
-  end
-
   class Family
     attr_accessor :income, :expense, :tax, :savings
 
-    def initialize(filing_status, savings, salary, cost_lower, cost_upper)
+    def initialize(filing_status, savings, salary, cost_lower, cost_upper, inflation)
       @income = Income.new(salary)
-      @expense = Expense.new('food', cost_lower, cost_upper)
+      @expense = Expense.new('food', cost_lower, cost_upper, inflation)
       @tax = Tax.new(filing_status)
-      @savings = savings
+      @savings = Savings.new(savings)
     end
   end
   
-  def Lifecastor.plan(years, family)
-    printf("%-5s%-5s%13s%13s%13s%13s%13s%13s%13s\n", "Year", "Month", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
+  def Lifecastor.run(family, years=10)
+    printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", "Year", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
     years.times { |y|
-      12.times { |m|
-        income = family.income.pay(y)
-        taxable_income = income - family.tax.std_deduction
-        federal_tax = taxable_income * family.tax.federal(taxable_income)
-        state_tax = taxable_income * family.tax.state(taxable_income)
-        expense = family.expense.cost
-        leftover = income - expense - federal_tax - state_tax
+      income = family.income.pay(y)
+      taxable_income = income - family.tax.std_deduction
+      
+      federal_tax = taxable_income * family.tax.federal(taxable_income)
+      state_tax = taxable_income * family.tax.state(taxable_income)
 
-        savings = family.savings += leftover
-        
-        printf("%4d %5d%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+1, m+1, income, taxable_income, federal_tax, state_tax, expense, leftover, savings)
+      expense = family.expense.cost(y)
 
-        raise Bankrupt if savings < 0.0
-      }
+      leftover = income - expense - federal_tax - state_tax
+
+      emergence_fund = family.savings.balance
+      net = emergence_fund + leftover
+
+      family.savings.update(net) # update family savings
+      
+      printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+1, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+
+      if net < 0.0
+        puts "BANKRUPT at year #{y}!" 
+        return 1
+        break
+      else
+      end
     }
+    return 0 # returns 0 or 1 standing for bankrupt or not
   end
 
   class Tax
@@ -86,8 +92,22 @@ module Lifecastor
     end
   end
   
+  class Savings
+    def initialize(bal, rate=0.01)
+      @bal = bal
+      @rate = rate # 1%
+    end
+  
+    def balance
+      @bal*(1.0 + @rate)
+    end
+  
+    def update(bal)
+      @bal = bal
+    end
+  end
+  
   class Income
-    attr_reader :base
     def initialize(b, inc=0.05)
       @base = b
       @inc = inc # 5%
@@ -99,28 +119,22 @@ module Lifecastor
   end
   
   class Expense
-    attr_accessor :cat
-  
-    def initialize(c, lo, up)
+    def initialize(c, lo, up, inf)
       @cat = c
       @cost
       @lo = lo
       @up = up
+      @inf = inf
     end
   
-    def cost
-      rand(@lo..@up)
-    end
-    # We override the array access operator to allow access to the 
-    # individual months of a horizon. Horizons are two-dimensional,
-    # and must be indexed with year and month coordinates.
-    def [](y, m)
-      # Convert two-dimensional (y, m) coordinates into a one-dimensional
-      # array index and return the cell value there
-      @cost[y*9 + m]
+    def cost(n) # need to inflation adjust here
+      lo = @lo*(1.0 + @inf)**n
+      up = @up*(1.0 + @inf)**n
+      rand(lo..up)
     end
   end
   
+  # those below are not used yet
   class Account
     attr_accessor :type, :base
   
@@ -159,11 +173,20 @@ module Lifecastor
   end
 end
 
-srand(2) # to make the randam numbers repeatable; without it the seed will be the current time, thus not repeatable
-filing_status = 'single'
-savings = 5000
-salary = 50000
-cost_lower = 25000
-cost_upper = 46000
-years = 4
-Lifecastor.plan(years, Lifecastor::Family.new(filing_status, savings, salary, cost_lower, cost_upper))
+# run many times to get a average view of the overall financial forecast: we can collect stats, e.g., probability of bankrupt
+count = 0
+total = 1000
+total.times { |s|
+  srand(s) # to make the randam numbers repeatable; without it the seed will be the current time, thus not repeatable
+  filing_status = 'single'
+  savings = 10000 # more or less like emergence fund: need to consider growth at a reasonable rate like 1%
+  salary = 50000
+  cost_lower = 20000
+  cost_upper = 45000
+  inflation = 0.03
+  years = 40
+  puts ''
+  puts s
+  count += Lifecastor.run(Lifecastor::Family.new(filing_status, savings, salary, cost_lower, cost_upper, inflation), years)
+}
+puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
