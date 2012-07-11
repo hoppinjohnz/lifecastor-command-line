@@ -1,8 +1,12 @@
 require 'mortgage_calc'
+require 'rubystats'
 
-# this module does the following:
-# defines Lifecastor::Family class to represent a family under financial planning and other helper classes
-# defines Lifecastor.run method to make a financial forecast for the family
+# this module defines the following:
+# Lifecastor::Family class to represent a family under financial planning/simulation
+# Lifecastor.run method to make a financial forecast for the family
+
+# TODO
+# retirement, death, estate planning, statistical catastrophical events
 
 module Lifecastor
 
@@ -12,24 +16,28 @@ module Lifecastor
   class Family
     attr_accessor :income, :expense, :tax, :savings
 
-    def initialize(filing_status, savings, salary, cost_lower, cost_upper, inflation)
-      @income = Income.new(salary)
-      @expense = Expense.new('food', cost_lower, cost_upper, inflation)
+    def initialize(filing_status, children, savings, income, mean, sd, inflation)
+      @income = Income.new(income)
+      @expense = Expense.new('food', mean, sd, inflation)
       @tax = Tax.new(filing_status)
       @savings = Savings.new(savings)
     end
   end
   
+  # returns 1 or 0 for bankrupt or not
   def Lifecastor.run(family, years=10)
-    printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", "Year", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
+    printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", 
+           "Year", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
     years.times { |y|
-      income = family.income.pay(y)
-      taxable_income = income - family.tax.std_deduction
+      income = family.income.of_year(y)
+
+      deduction = family.tax.std_deduction
+      taxable_income = income > deduction ? income - deduction : 0
       
       federal_tax = taxable_income * family.tax.federal(taxable_income)
       state_tax = taxable_income * family.tax.state(taxable_income)
 
-      expense = family.expense.cost(y)
+      expense = family.expense.normal_cost(y)
 
       leftover = income - expense - federal_tax - state_tax
 
@@ -38,16 +46,15 @@ module Lifecastor
 
       family.savings.update(net) # update family savings
       
-      printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+1, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+      printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
+             y+1, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
 
       if net < 0.0
-        puts "BANKRUPT at year #{y}!" 
+        puts "BANKRUPT at year #{y+1}!" 
         return 1
-        break
-      else
       end
     }
-    return 0 # returns 0 or 1 standing for bankrupt or not
+    return 0 
   end
 
   class Tax
@@ -68,12 +75,12 @@ module Lifecastor
   
     def federal(income)
       case income
-        when -INFINITY..  0 then 0.00 # added to deal with below 0 taxable income
-        when      0..  8700 then 0.10 # projected for 2012
-        when   8701.. 35350 then 0.15
-        when  35351.. 85650 then 0.25
-        when  85651..178650 then 0.28
-        when 178651..388350 then 0.33
+        when -INFINITY..  0   then 0.00 # added to deal with below 0 taxable income
+        when      0..  8700   then 0.10 # projected for 2012
+        when   8701.. 35350   then 0.15
+        when  35351.. 85650   then 0.25
+        when  85651..178650   then 0.28
+        when 178651..388350   then 0.33
         when 388351..INFINITY then 0.35
         else raise "Unknown income in Tax::federal"
       end
@@ -81,19 +88,19 @@ module Lifecastor
   
     def state(income)
       case income
-        when     0.. 2760 then 0.00 # projected for 2012
-        when  2761.. 5520 then 0.03
-        when  5521.. 8280 then 0.04
-        when  8281..11040 then 0.05
-        when 11041..13800 then 0.06
-        when 13801..INFINITY then 0.07
+        when -INFINITY.. 2760    then 0.00 # projected for 2012
+        when      2761.. 5520    then 0.03
+        when      5521.. 8280    then 0.04
+        when      8281..11040    then 0.05
+        when     11041..13800    then 0.06
+        when     13801..INFINITY then 0.07
         else raise "Unknown income in Tax::state"
       end
     end
   end
   
   class Savings
-    def initialize(bal, rate=0.01)
+    def initialize(bal, rate=0.002)
       @bal = bal
       @rate = rate # 1%
     end
@@ -109,31 +116,59 @@ module Lifecastor
   
   class Income
     def initialize(b, inc=0.05)
-      @base = b
+      @base = b[0]
+      @years_to_retire = b[1]
       @inc = inc # 5%
     end
   
-    def pay(n)
-      @base*(1.0 + @inc)**n
+    def of_year(n)
+      n < @years_to_retire ? @base*(1.0 + @inc)**n : 0
     end
   end
   
   class Expense
-    def initialize(c, lo, up, inf)
+    def initialize(c, mean, sd, inf=0.02)
       @cat = c
-      @cost
-      @lo = lo
-      @up = up
+      @mean = mean
+      @sd = sd
       @inf = inf
     end
   
     def cost(n) # need to inflation adjust here
-      lo = @lo*(1.0 + @inf)**n
-      up = @up*(1.0 + @inf)**n
+      lo = (@mean-2*@sd)*(1.0 + @inf)**n
+      up = (@mean+2*@sd)*(1.0 + @inf)**n
       rand(lo..up)
+    end
+  
+    def normal_cost(n) # need to inflation adjust here
+      mean = @mean*(1.0 + @inf)**n
+      Rubystats::NormalDistribution.new(mean, @sd).rng
     end
   end
   
+  class Child < Expense
+    def initialize(c, lo, up, inf=0.02, age, base)
+      super(c, lo, up, inf)
+      @age = age
+      @base = base
+    end
+    
+    # http://visualeconomics.creditloan.com/how-much-does-it-really-cost-to-raise-a-kid/
+    def expense(n) # age dependent expenses like child care, elementary, middle, high schools
+      case age + n # age can be negative: -3 means expecting a child in 4 years
+      when  -INFINITY..-1 then 0
+      when          0.. 2 then 11700
+      when          3.. 5 then 11730
+      when          6.. 8 then 11650
+      when          9..11 then 12420
+      when         12..14 then 13090
+      when         15..17 then 13530
+      when         18..22 then 30000
+      else 1000
+      end
+    end
+  end
+
   # those below are not used yet
   class Account
     attr_accessor :type, :base
@@ -173,20 +208,25 @@ module Lifecastor
   end
 end
 
-# run many times to get a average view of the overall financial forecast: we can collect stats, e.g., probability of bankrupt
+# run many times to get an average view of the overall financial forecast
+# we can collect stats, e.g., probability of bankrupt
 count = 0
-total = 1000
+total = 100
 total.times { |s|
-  srand(s) # to make the randam numbers repeatable; without it the seed will be the current time, thus not repeatable
+  srand(s) # to make the randam numbers repeatable; without it the seed will be the not repeatable time
+
+  # user data
   filing_status = 'single'
-  savings = 10000 # more or less like emergence fund: need to consider growth at a reasonable rate like 1%
-  salary = 50000
-  cost_lower = 20000
-  cost_upper = 45000
+  children = [['Kyle', 12], ['Chris', 10]] # [name, age]
+  savings = 10000 # more or less like emergence fund
+  income = [50000, 30] # [salary, years_to_retire]
+  spending_mean = 30000
+  spending_sd = 10000
   inflation = 0.03
   years = 40
+
   puts ''
   puts s
-  count += Lifecastor.run(Lifecastor::Family.new(filing_status, savings, salary, cost_lower, cost_upper, inflation), years)
+  count += Lifecastor.run(Lifecastor::Family.new(filing_status, children, savings, income, spending_mean, spending_sd, inflation), years)
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
