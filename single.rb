@@ -15,8 +15,6 @@ module Lifecastor
   LIFE_EXPECTANCY = 78
   
   class Family
-    attr_accessor :age, :income, :expense, :tax, :savings
-
     def initialize(filing_status, children, savings, income, expense, inflation)
       @age = income[1]
       @age_to_retire = income[2]
@@ -26,39 +24,39 @@ module Lifecastor
       @tax = Tax.new(filing_status)
       @savings = Savings.new(savings)
     end
-  end
   
-  # returns 1 or 0 for bankrupt or not
-  def Lifecastor.run(family)
-    printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", 
-           "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
-    (LIFE_EXPECTANCY-family.age+1).times { |y|
-      income = family.income.of_year(y)
-
-      deduction = family.tax.std_deduction
-      taxable_income = income > deduction ? income - deduction : 0
-      
-      federal_tax = taxable_income * family.tax.federal(taxable_income)
-      state_tax = taxable_income * family.tax.state(taxable_income)
-
-      expense = family.expense.normal_cost(y)
-
-      leftover = income - expense - federal_tax - state_tax
-
-      emergence_fund = family.savings.balance
-      net = emergence_fund + leftover
-
-      family.savings.update(net) # update family savings
-      
-      printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
-             y+family.age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
-
-      if net < 0.0
-        puts "BANKRUPT at age #{y+family.age}!" 
-        return 1
-      end
-    }
-    return 0 
+    # returns 1 or 0 for bankrupt or not
+    def run
+      printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", 
+             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
+      (LIFE_EXPECTANCY-@age+1).times { |y|
+        income = @income.of_year(y)
+  
+        deduction = @tax.std_deduction
+        taxable_income = income > deduction ? income - deduction : 0
+        
+        federal_tax = taxable_income * @tax.federal(taxable_income)
+        state_tax = taxable_income * @tax.state(taxable_income)
+  
+        expense = @expense.normal_cost(y)
+  
+        leftover = income - expense - federal_tax - state_tax
+  
+        emergence_fund = @savings.balance
+        net = emergence_fund + leftover
+  
+        @savings.update(net) # update family savings
+        
+        printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
+               y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+  
+        if net < 0.0
+          puts "BANKRUPT at age #{y+@age}!" 
+          return 1
+        end
+      }
+      return 0 
+    end
   end
 
   class Savings
@@ -237,12 +235,13 @@ total.times { |s|
   filing_status = 'single'
   children = [['Kyle', 12], ['Chris', 10]] # [name, age]
   savings = 10000 # more or less like emergence fund
-  income = [50000, 10, 69] # [salary, age, age_to_retire]
+  income = [50000, 25, 65] # [salary, age, age_to_retire]
+  # realistically, expense should be smaller at the beginning to avoid so many first year bankrupts
   expense = [30000, 9000]
   inflation = 0.03
 
   puts ''
   puts s
-  count += Lifecastor.run(Lifecastor::Family.new(filing_status, children, savings, income, expense, inflation))
+  count += Lifecastor::Family.new(filing_status, children, savings, income, expense, inflation).run
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
