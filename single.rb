@@ -12,23 +12,27 @@ module Lifecastor
 
   # global constents
   INFINITY = 99999999999999999
+  LIFE_EXPECTANCY = 78
   
   class Family
-    attr_accessor :income, :expense, :tax, :savings
+    attr_accessor :age, :income, :expense, :tax, :savings
 
-    def initialize(filing_status, children, savings, income, mean, sd, inflation)
-      @income = Income.new(income)
-      @expense = Expense.new('food', mean, sd, inflation)
+    def initialize(filing_status, children, savings, income, expense, inflation)
+      @age = income[1]
+      @age_to_retire = income[2]
+      @years_to_work = @age_to_retire - @age > 0 ? @age_to_retire - @age : 0
+      @income = Income.new(income[0], @age, @age_to_retire, @years_to_work)
+      @expense = Expense.new('food', expense, inflation)
       @tax = Tax.new(filing_status)
       @savings = Savings.new(savings)
     end
   end
   
   # returns 1 or 0 for bankrupt or not
-  def Lifecastor.run(family, years=10)
+  def Lifecastor.run(family)
     printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", 
-           "Year", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
-    years.times { |y|
+           "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
+    (LIFE_EXPECTANCY-family.age+1).times { |y|
       income = family.income.of_year(y)
 
       deduction = family.tax.std_deduction
@@ -47,58 +51,16 @@ module Lifecastor
       family.savings.update(net) # update family savings
       
       printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
-             y+1, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+             y+family.age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
 
       if net < 0.0
-        puts "BANKRUPT at year #{y+1}!" 
+        puts "BANKRUPT at age #{y+family.age}!" 
         return 1
       end
     }
     return 0 
   end
 
-  class Tax
-    def initialize(filing_status)
-      @fs = filing_status
-    end
-
-    def std_deduction
-      case @fs
-        when "single"                    then  5700 # for 2011
-        when "married_filing_separately" then  5700
-        when "married_filing_jointly"    then 11400
-        when "head_of_household"         then  8400
-        when "qualifying_window"         then 11400
-        else raise "Unknown filing_status"
-      end
-    end
-  
-    def federal(income)
-      case income
-        when -INFINITY..  0   then 0.00 # added to deal with below 0 taxable income
-        when      0..  8700   then 0.10 # projected for 2012
-        when   8701.. 35350   then 0.15
-        when  35351.. 85650   then 0.25
-        when  85651..178650   then 0.28
-        when 178651..388350   then 0.33
-        when 388351..INFINITY then 0.35
-        else raise "Unknown income in Tax::federal"
-      end
-    end
-  
-    def state(income)
-      case income
-        when -INFINITY.. 2760    then 0.00 # projected for 2012
-        when      2761.. 5520    then 0.03
-        when      5521.. 8280    then 0.04
-        when      8281..11040    then 0.05
-        when     11041..13800    then 0.06
-        when     13801..INFINITY then 0.07
-        else raise "Unknown income in Tax::state"
-      end
-    end
-  end
-  
   class Savings
     def initialize(bal, rate=0.002)
       @bal = bal
@@ -115,22 +77,35 @@ module Lifecastor
   end
   
   class Income
-    def initialize(b, inc=0.05)
-      @base = b[0]
-      @years_to_retire = b[1]
+    def initialize(b, age, age_to_retire, years_to_work, inc=0.05)
+      @base = b
+      @age = age
+      @age_to_retire = age_to_retire
+      @years_to_work = years_to_work
       @inc = inc # 5%
     end
   
     def of_year(n)
-      n < @years_to_retire ? @base*(1.0 + @inc)**n : 0
+      # before retirement normal income, after retirement ss
+      # 62   17016
+      # 66.5 24984
+      # 70   34092
+      ss = case @age_to_retire
+           when 0..61 then 0
+           when 62..66 then 17016
+           when 67..69 then 24984
+           when 70..INFINITY then 34092
+           else raise "Unknown age to retire: #{age_to_retire}"
+           end
+      n < @years_to_work ? @base*(1.0 + @inc)**n : 17016
     end
   end
   
   class Expense
-    def initialize(c, mean, sd, inf=0.02)
+    def initialize(c, expense, inf=0.02)
       @cat = c
-      @mean = mean
-      @sd = sd
+      @mean = expense[0]
+      @sd = expense[1]
       @inf = inf
     end
   
@@ -140,6 +115,7 @@ module Lifecastor
       rand(lo..up)
     end
   
+    # need to adjust down to 80% after retirement
     def normal_cost(n) # need to inflation adjust here
       mean = @mean*(1.0 + @inf)**n
       Rubystats::NormalDistribution.new(mean, @sd).rng
@@ -169,6 +145,48 @@ module Lifecastor
     end
   end
 
+  class Tax
+    def initialize(filing_status)
+      @fs = filing_status
+    end
+
+    def std_deduction
+      case @fs
+        when "single"                    then  5700 # for 2011
+        when "married_filing_separately" then  5700
+        when "married_filing_jointly"    then 11400
+        when "head_of_household"         then  8400
+        when "qualifying_window"         then 11400
+        else raise "Unknown filing_status: #{fs}"
+      end
+    end
+  
+    def federal(income)
+      case income
+        when -INFINITY..  0   then 0.00 # added to deal with below 0 taxable income
+        when      0..  8700   then 0.10 # projected for 2012
+        when   8701.. 35350   then 0.15
+        when  35351.. 85650   then 0.25
+        when  85651..178650   then 0.28
+        when 178651..388350   then 0.33
+        when 388351..INFINITY then 0.35
+        else raise "Unknown income: #{income} in Tax::federal"
+      end
+    end
+  
+    def state(income)
+      case income
+        when -INFINITY.. 2760    then 0.00 # projected for 2012
+        when      2761.. 5520    then 0.03
+        when      5521.. 8280    then 0.04
+        when      8281..11040    then 0.05
+        when     11041..13800    then 0.06
+        when     13801..INFINITY then 0.07
+        else raise "Unknown income: #{income} in Tax::state"
+      end
+    end
+  end
+  
   # those below are not used yet
   class Account
     attr_accessor :type, :base
@@ -213,20 +231,18 @@ end
 count = 0
 total = 100
 total.times { |s|
-  srand(s) # to make the randam numbers repeatable; without it the seed will be the not repeatable time
+  srand(s+222) # to make the randam numbers repeatable; without it the seed will be the not repeatable time
 
   # user data
   filing_status = 'single'
   children = [['Kyle', 12], ['Chris', 10]] # [name, age]
   savings = 10000 # more or less like emergence fund
-  income = [50000, 30] # [salary, years_to_retire]
-  spending_mean = 30000
-  spending_sd = 10000
+  income = [50000, 10, 69] # [salary, age, age_to_retire]
+  expense = [30000, 9000]
   inflation = 0.03
-  years = 40
 
   puts ''
   puts s
-  count += Lifecastor.run(Lifecastor::Family.new(filing_status, children, savings, income, spending_mean, spending_sd, inflation), years)
+  count += Lifecastor.run(Lifecastor::Family.new(filing_status, children, savings, income, expense, inflation))
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
