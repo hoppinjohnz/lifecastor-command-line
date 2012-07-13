@@ -1,8 +1,9 @@
 require 'mortgage_calc'
 require 'rubystats'
+require 'optparse'
 
 # this module defines the following:
-# Lifecastor::Family class to represent a family under financial planning/simulation
+# Lifecastor::Plan class to represent a financial planning/simulation
 # Lifecastor.run method to make a financial forecast for the family
 
 # TODO
@@ -13,22 +14,27 @@ module Lifecastor
   # global constents
   INFINITY = 99999999999999999
   LIFE_EXPECTANCY = 78
-  
-  class Family
-    def initialize(filing_status, children, savings, income, expense, inflation)
+  EXPENSE_AFTER_RETIREMENT = 0.8
+  FIRST_TWO_YEAR_FACTOR = 0.7
+
+  class Plan
+    def initialize(options, filing_status, children, savings, income, expense, inflation)
+      @options = options
       @age = income[1]
       @age_to_retire = income[2]
-      @years_to_work = @age_to_retire - @age > 0 ? @age_to_retire - @age : 0
+      @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
       @income = Income.new(income[0], @age, @age_to_retire, @years_to_work)
+
       @expense = Expense.new('food', expense, inflation)
+
       @tax = Tax.new(filing_status)
+
       @savings = Savings.new(savings)
     end
   
     # returns 1 or 0 for bankrupt or not
     def run
-      printf("%-5s%13s%13s%13s%13s%13s%13s%13s\n", 
-             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings")
+      printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @options[:verbose]
       (LIFE_EXPECTANCY-@age+1).times { |y|
         income = @income.of_year(y)
   
@@ -38,7 +44,7 @@ module Lifecastor
         federal_tax = taxable_income * @tax.federal(taxable_income)
         state_tax = taxable_income * @tax.state(taxable_income)
   
-        expense = @expense.normal_cost(y)
+        expense = @expense.normal_cost(y, y >= @years_to_work)
   
         leftover = income - expense - federal_tax - state_tax
   
@@ -47,11 +53,11 @@ module Lifecastor
   
         @savings.update(net) # update family savings
         
-        printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
-               y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+        printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @options[:verbose]
   
         if net < 0.0
           puts "BANKRUPT at age #{y+@age}!" 
+          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@options[:verbose]
           return 1
         end
       }
@@ -95,7 +101,7 @@ module Lifecastor
            when 70..INFINITY then 34092
            else raise "Unknown age to retire: #{age_to_retire}"
            end
-      n < @years_to_work ? @base*(1.0 + @inc)**n : 17016
+      n < @years_to_work ? @base*(1.0 + @inc)**n : ss
     end
   end
   
@@ -113,10 +119,16 @@ module Lifecastor
       rand(lo..up)
     end
   
-    # need to adjust down to 80% after retirement
-    def normal_cost(n) # need to inflation adjust here
-      mean = @mean*(1.0 + @inf)**n
-      Rubystats::NormalDistribution.new(mean, @sd).rng
+    def normal_cost(n, retired) 
+      mean = @mean*(1.0 + @inf)**n # inflation adjust here
+      if n < 2
+        mean = FIRST_TWO_YEAR_FACTOR*@mean
+        sd   = FIRST_TWO_YEAR_FACTOR*@sd
+      else
+        mean = retired ? EXPENSE_AFTER_RETIREMENT*mean : mean # adjust down to 80% after retirement
+        sd   = retired ? EXPENSE_AFTER_RETIREMENT*@sd : @sd
+      end
+      Rubystats::NormalDistribution.new(mean, sd).rng
     end
   end
   
@@ -224,24 +236,53 @@ module Lifecastor
   end
 end
 
+
+# This hash will hold all of the options parsed from the command-line by OptionParser.
+options = {}
+
+optparse = OptionParser.new do|opts|
+  # Set a banner, displayed at the top of the help screen.
+  opts.banner = "Usage: ruby #{__FILE__} [options]"
+
+  # Define the options, and what they do
+  options[:verbose] = false
+  opts.on( '-v', '--verbose', 'Output complete output' ) do
+    options[:verbose] = true
+  end
+
+  # This displays the help screen, all programs are assumed to have this option.
+  opts.on( '-h', '--help', 'Display this screen' ) do
+    puts opts
+    exit
+  end
+end
+
+# Parse the command-line. Remember there are two forms
+# of the parse method. The 'parse' method simply parses
+# ARGV, while the 'parse!' method parses ARGV and removes
+# any options found there, as well as any parameters for
+# the options. What's left is the list of files to resize.
+optparse.parse!
+
+
 # run many times to get an average view of the overall financial forecast
 # we can collect stats, e.g., probability of bankrupt
 count = 0
 total = 100
 total.times { |s|
-  srand(s+222) # to make the randam numbers repeatable; without it the seed will be the not repeatable time
+  srand(s+222) # to make the randam numbers repeatable; without it, the seed will be the not repeatable time
 
   # user data
   filing_status = 'single'
   children = [['Kyle', 12], ['Chris', 10]] # [name, age]
-  savings = 10000 # more or less like emergence fund
-  income = [50000, 25, 65] # [salary, age, age_to_retire]
+  savings = 2000 # more or less like emergence fund
+  income = [40000, 25, 65] # [salary, age, age_to_retire]
   # realistically, expense should be smaller at the beginning to avoid so many first year bankrupts
-  expense = [30000, 9000]
+  expense = [25000, 9000]
   inflation = 0.03
 
-  puts ''
-  puts s
-  count += Lifecastor::Family.new(filing_status, children, savings, income, expense, inflation).run
+#  puts ''
+#  puts s
+  count += Lifecastor::Plan.new(options, filing_status, children, savings, income, expense, inflation).run
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
