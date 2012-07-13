@@ -7,7 +7,7 @@ require 'optparse'
 # Lifecastor.run method to make a financial forecast for the family
 
 # TODO
-# retirement, death, estate planning, statistical catastrophical events
+# retirement, death, estate planning, catastrophical events/life insurance, random income, random inflation, will, estate stats 
 
 module Lifecastor
 
@@ -16,9 +16,10 @@ module Lifecastor
   LIFE_EXPECTANCY = 78
   EXPENSE_AFTER_RETIREMENT = 0.8
   FIRST_TWO_YEAR_FACTOR = 0.7
+  INFLATION_DEFAULT = 0.02
 
   class Plan
-    def initialize(options, filing_status, children, savings, income, expense, inflation)
+    def initialize(options, filing_status, children, savings, income, expense, inflation=INFLATION_DEFAULT)
       @options = options
       @age = income[1]
       @age_to_retire = income[2]
@@ -106,7 +107,7 @@ module Lifecastor
   end
   
   class Expense
-    def initialize(c, expense, inf=0.02)
+    def initialize(c, expense, inf=INFLATION_DEFAULT)
       @cat = c
       @mean = expense[0]
       @sd = expense[1]
@@ -133,7 +134,7 @@ module Lifecastor
   end
   
   class Child < Expense
-    def initialize(c, lo, up, inf=0.02, age, base)
+    def initialize(c, lo, up, inf=INFLATION_DEFAULT, age, base)
       super(c, lo, up, inf)
       @age = age
       @base = base
@@ -262,8 +263,13 @@ end
 # ARGV, while the 'parse!' method parses ARGV and removes
 # any options found there, as well as any parameters for
 # the options. What's left is the list of files to resize.
-optparse.parse!
-
+begin
+  optparse.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument
+  puts $!.to_s  # Friendly output when parsing fails
+  puts optparse
+  exit
+end 
 
 # run many times to get an average view of the overall financial forecast
 # we can collect stats, e.g., probability of bankrupt
