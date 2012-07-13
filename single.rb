@@ -1,6 +1,8 @@
 require 'mortgage_calc'
 require 'rubystats'
 require 'optparse'
+require "properties-ruby"
+require "time"
 
 # this module defines the following:
 # Lifecastor::Plan class to represent a financial planning/simulation
@@ -16,15 +18,16 @@ module Lifecastor
   LIFE_EXPECTANCY = 78
   EXPENSE_AFTER_RETIREMENT = 0.8
   FIRST_TWO_YEAR_FACTOR = 0.7
-  INFLATION_DEFAULT = 0.02
+  INFLATION_MEAN = 0.02
+  INFLATION_SD = 0.002
 
   class Plan
-    def initialize(options, filing_status, children, savings, income, expense, inflation=INFLATION_DEFAULT)
+    def initialize(options, filing_status, children, savings, income, expense, inflation)
       @options = options
       @age = income[1]
       @age_to_retire = income[2]
       @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
-      @income = Income.new(income[0], @age, @age_to_retire, @years_to_work)
+      @income = Income.new(income)
 
       @expense = Expense.new('food', expense, inflation)
 
@@ -82,12 +85,13 @@ module Lifecastor
   end
   
   class Income
-    def initialize(b, age, age_to_retire, years_to_work, inc=0.05)
-      @base = b
-      @age = age
-      @age_to_retire = age_to_retire
-      @years_to_work = years_to_work
-      @inc = inc # 5%
+    def initialize(income)
+      @base = income[0]
+      @age = income[1]
+      @age_to_retire = income[2]
+      @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
+      @inc_m = income[3]
+      @inc_sd = income[4]
     end
   
     def of_year(n)
@@ -102,26 +106,31 @@ module Lifecastor
            when 70..INFINITY then 34092
            else raise "Unknown age to retire: #{age_to_retire}"
            end
-      n < @years_to_work ? @base*(1.0 + @inc)**n : ss
+      inc = Rubystats::NormalDistribution.new(@inc_m, @inc_sd).rng
+      @base = @base*(1.0 + inc)
+      n < @years_to_work ? @base : ss
     end
   end
   
   class Expense
-    def initialize(c, expense, inf=INFLATION_DEFAULT)
+    def initialize(c, expense, inf)
       @cat = c
       @mean = expense[0]
       @sd = expense[1]
-      @inf = inf
+      @inf_m = inf[0]
+      @inf_sd = inf[1]
     end
   
     def cost(n) # need to inflation adjust here
-      lo = (@mean-2*@sd)*(1.0 + @inf)**n
-      up = (@mean+2*@sd)*(1.0 + @inf)**n
+      inf = Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng
+      lo = (@mean-2*@sd)*(1.0 + inf)**n
+      up = (@mean+2*@sd)*(1.0 + inf)**n
       rand(lo..up)
     end
   
     def normal_cost(n, retired) 
-      mean = @mean*(1.0 + @inf)**n # inflation adjust here
+      inf = Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng
+      mean = @mean*(1.0 + inf)**n # inflation adjust here
       if n < 2
         mean = FIRST_TWO_YEAR_FACTOR*@mean
         sd   = FIRST_TWO_YEAR_FACTOR*@sd
@@ -134,7 +143,7 @@ module Lifecastor
   end
   
   class Child < Expense
-    def initialize(c, lo, up, inf=INFLATION_DEFAULT, age, base)
+    def initialize(c, lo, up, inf, age, base)
       super(c, lo, up, inf)
       @age = age
       @base = base
@@ -173,7 +182,7 @@ module Lifecastor
     end
   
     def federal(income)
-      case income
+      case income.to_i
         when -INFINITY..  0   then 0.00 # added to deal with below 0 taxable income
         when      0..  8700   then 0.10 # projected for 2012
         when   8701.. 35350   then 0.15
@@ -186,7 +195,7 @@ module Lifecastor
     end
   
     def state(income)
-      case income
+      case income.to_i
         when -INFINITY.. 2760    then 0.00 # projected for 2012
         when      2761.. 5520    then 0.03
         when      5521.. 8280    then 0.04
@@ -271,24 +280,24 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument
   exit
 end 
 
+
+p = Utils::Properties.load_from_file("lifecastor.properties", true)
+
 # run many times to get an average view of the overall financial forecast
 # we can collect stats, e.g., probability of bankrupt
 count = 0
 total = 100
 total.times { |s|
-  srand(s+222) # to make the randam numbers repeatable; without it, the seed will be the not repeatable time
-
-  # user data
-  filing_status = 'single'
+  # user data from properties file
+  seed_offset = p.seed_offset.to_i
+  filing_status = p.filing_status
   children = [['Kyle', 12], ['Chris', 10]] # [name, age]
-  savings = 2000 # more or less like emergence fund
-  income = [40000, 25, 65] # [salary, age, age_to_retire]
-  # realistically, expense should be smaller at the beginning to avoid so many first year bankrupts
-  expense = [25000, 9000]
-  inflation = 0.03
+  savings = p.savings.to_i # more or less like emergence fund
+  income = [p.income.to_i, p.age.to_i, p.age_to_retire.to_i, p.increase_mean.to_f, p.increase_sd.to_f]
+  expense = [p.expense_mean.to_i, p.expense_sd.to_i]
+  inflation = [p.inflation_mean.to_f, p.inflation_sd.to_f]
 
-#  puts ''
-#  puts s
+  srand(s+seed_offset) # make the randam repeatable; without it, the random will not repeat
   count += Lifecastor::Plan.new(options, filing_status, children, savings, income, expense, inflation).run
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
