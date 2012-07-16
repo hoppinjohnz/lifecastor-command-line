@@ -3,6 +3,8 @@ require 'rubystats'
 require 'optparse'
 require "properties-ruby"
 require "time"
+require 'gchart'
+require 'launchy'
 
 # this module defines the following:
 # Lifecastor::Plan class to represent a financial planning/simulation
@@ -13,16 +15,13 @@ require "time"
 
 module Lifecastor
 
-  # global constents
+  # global constants
   INFINITY = 99999999999999999
-  LIFE_EXPECTANCY = 78
-  EXPENSE_AFTER_RETIREMENT = 0.8
-  FIRST_TWO_YEAR_FACTOR = 0.7
-  INFLATION_MEAN = 0.02
-  INFLATION_SD = 0.002
 
   class Plan
-    def initialize(options, filing_status, children, savings, income, expense, inflation)
+    def initialize(h, p, options, filing_status, children, savings, income, expense, inflation)
+      @h = h
+      @p = p
       @options = options
       @age = income[1]
       @age_to_retire = income[2]
@@ -39,7 +38,7 @@ module Lifecastor
     # returns 1 or 0 for bankrupt or not
     def run
       printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @options[:verbose]
-      (LIFE_EXPECTANCY-@age+1).times { |y|
+      (@p.life_expectancy.to_i-@age+1).times { |y|
         income = @income.of_year(y)
   
         deduction = @tax.std_deduction
@@ -48,7 +47,7 @@ module Lifecastor
         federal_tax = taxable_income * @tax.federal(taxable_income)
         state_tax = taxable_income * @tax.state(taxable_income)
   
-        expense = @expense.normal_cost(y, y >= @years_to_work)
+        expense = @expense.normal_cost(@p, y, y >= @years_to_work, y+@age == @p.life_expectancy.to_i)
   
         leftover = income - expense - federal_tax - state_tax
   
@@ -59,7 +58,10 @@ module Lifecastor
         
         printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @options[:verbose]
   
-        if net < 0.0
+        write_result(y, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+
+        if net < 0.0 
+        #if net < 0.0 and y < @p.life_expectancy.to_i-@age # not counting last year
           puts "BANKRUPT at age #{y+@age}!" 
           printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@options[:verbose]
           return 1
@@ -67,12 +69,34 @@ module Lifecastor
       }
       return 0 
     end
+
+    def write_result(year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+      if year == 0
+        @h['year'] = Array.new << year
+        @h['income'] = Array.new << income.to_i
+        @h['taxable_income'] = Array.new << taxable_income.to_i
+        @h['federal_tax'] = Array.new << federal_tax.to_i
+        @h['state_tax'] = Array.new << state_tax.to_i
+        @h['expense'] = Array.new << expense.to_i
+        @h['leftover'] = Array.new << leftover.to_i
+        @h['net'] = Array.new << net.to_i
+      else
+        @h['year'] << year
+        @h['income'] << income.to_i
+        @h['taxable_income'] << taxable_income.to_i
+        @h['federal_tax'] << federal_tax.to_i
+        @h['state_tax'] << state_tax.to_i
+        @h['expense'] << expense.to_i
+        @h['leftover'] << leftover.to_i
+        @h['net'] << net.to_i
+      end
+    end
   end
 
   class Savings
     def initialize(bal, rate=0.002)
       @bal = bal
-      @rate = rate # 1%
+      @rate = rate # 0.1%
     end
   
     def balance
@@ -89,9 +113,9 @@ module Lifecastor
       @base = income[0]
       @age = income[1]
       @age_to_retire = income[2]
-      @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
       @inc_m = income[3]
       @inc_sd = income[4]
+      @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
     end
   
     def of_year(n)
@@ -128,15 +152,18 @@ module Lifecastor
       rand(lo..up)
     end
   
-    def normal_cost(n, retired) 
+    def normal_cost(p, n, retired, dead) 
       inf = Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng
-      mean = @mean*(1.0 + inf)**n # inflation adjust here
+      @mean = @mean*(1.0 + inf) # inflation adjust here
       if n < 2
-        mean = FIRST_TWO_YEAR_FACTOR*@mean
-        sd   = FIRST_TWO_YEAR_FACTOR*@sd
+        mean = p.first_two_year_factor.to_f*@mean
+        sd   = p.first_two_year_factor.to_f*@sd
+      elsif dead
+        mean = 0.5 * (retired ? p.expense_after_retirement.to_f*@mean : @mean) # adjust down to 80% after retirement
+        sd   = 0.5 * (retired ? p.expense_after_retirement.to_f*@sd : @sd)
       else
-        mean = retired ? EXPENSE_AFTER_RETIREMENT*mean : mean # adjust down to 80% after retirement
-        sd   = retired ? EXPENSE_AFTER_RETIREMENT*@sd : @sd
+        mean = retired ? p.expense_after_retirement.to_f*@mean : @mean # adjust down to 80% after retirement
+        sd   = retired ? p.expense_after_retirement.to_f*@sd : @sd
       end
       Rubystats::NormalDistribution.new(mean, sd).rng
     end
@@ -284,10 +311,12 @@ end
 p = Utils::Properties.load_from_file("lifecastor.properties", true)
 
 # run many times to get an average view of the overall financial forecast
-# we can collect stats, e.g., probability of bankrupt
 count = 0
 total = 100
+res = [] # result set indexed by seeds 0..total constains hashes keyed by 'income, expense, ...'; each has is an array of time series
 total.times { |s|
+  res << h = Hash.new() # stores the planning result hashed on income, tax, expense, ...
+
   # user data from properties file
   seed_offset = p.seed_offset.to_i
   filing_status = p.filing_status
@@ -298,6 +327,97 @@ total.times { |s|
   inflation = [p.inflation_mean.to_f, p.inflation_sd.to_f]
 
   srand(s+seed_offset) # make the randam repeatable; without it, the random will not repeat
-  count += Lifecastor::Plan.new(options, filing_status, children, savings, income, expense, inflation).run
+  count += Lifecastor::Plan.new(h, p, options, filing_status, children, savings, income, expense, inflation).run
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
+
+=begin 
+translate data into this format
+  ['Year', 'Sales', 'Expenses'],
+  ['2004',  100000,      40000],
+  ['2005',  117000,      46000],
+  ['2006',  66000,       112000],
+  ['2007',  103000,      54000]
+  options needs to be dynamically generated as well
+insert it into the html template  
+save the html file
+render the file by browser
+=end   
+
+def format_data_for_charting(array, xaxis, yaxis)
+  s = '          ["Year", "Value"],'+"\n"
+  array.length.times {|y|
+    done = array.length-1
+    if y != done
+      s << "          [\'"+y.to_s+"\', "+array[y].to_s+'],'+"\n"
+    else
+      s << "          [\'"+y.to_s+"\', "+array[y].to_s+']'
+    end
+  }
+  s
+end
+
+def insert_into_html(s, title)
+  f = File.new("chart.html", "w+")
+  f.puts "<html>"
+  f.puts "  <head>"
+  f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
+  f.puts "    <script type=\"text/javascript\">"
+  f.puts "      google.load(\"visualization\", \"1\", {packages:[\"corechart\"]});"
+  f.puts "      google.setOnLoadCallback(drawChart);"
+  f.puts "      function drawChart() {"
+  f.puts "        var data = google.visualization.arrayToDataTable(["
+  f.puts s
+
+  f.puts "        ]);"
+  f.puts "        var options = {"
+  f.puts "          title: \"#{title}\""
+  #f.puts           "title: 'Company Performance',"
+  #f.puts           "vAxis: {minValue: 1200000},"
+  #f.puts           "vAxis: {gridlines: {count: 3}},"
+  #f.puts           "vAxis: {maxValue: 1500000}"
+  f.puts "        };"
+  f.puts "        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));"
+  f.puts "        chart.draw(data, options);"
+  f.puts "      }"
+  f.puts "    </script>"
+  f.puts "  </head>"
+  f.puts "  <body>"
+  f.puts "    <div id=\"chart_div\" style=\"width: 900px; height: 400px;\"></div>"
+  f.puts "  </body>"
+  f.puts "<html>"
+  f.close
+  Launchy.open("chart.html")
+end
+
+s = format_data_for_charting(res[99]['net'],'','')
+insert_into_html(s, 'Savings')
+
+#puts res[99]['net']
+#
+#Launchy.open(
+##Gchart.line( :data => [17, 17, 11, 8, 2], 
+##              :axis_with_labels => ['x', 'y'], 
+##              :axis_labels => [['J', 'F', 'M', 'A', 'M']], 
+##              :axis_range => [nil, [0,17,]]
+#  Gchart.line(
+#           # :size => '1000x300', 
+#           # :title => "Savings vs. Years",
+#           # :bg => 'efefef',
+#           # #:legend => ['first data set label', 'second data set label'],
+#            :data => [res[99]['net']], 
+#            :axis_with_labels => ['x', 'y'],
+#            :axis_labels => [['1','2','3','4','5','6','7','8','9','10','11','12','13','14']],
+##            :axis_labels => [[res[99]['year']]],
+#            :axis_range => [nil, [0,1442009,]]
+##            #:data => [10, 30, 120, 45, 72]
+#                        ))
+##Launchy.open(
+### works Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :labels => ['x','y', 'z'])
+### works Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :labels => ['Jan','July','Jan','July','Jan']))
+##
+###Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :axis_with_labels => 'x,r',
+###            :axis_labels => [['Jan','July','Jan','July','Jan'], ['2005','2006','2007']])
+##Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :axis_with_labels => 'r,x,y',
+##            :axis_labels => ['', '11|22|33|44|55|66|77|88', '0|1o0|200|300']
+##           ))
