@@ -19,7 +19,8 @@ module Lifecastor
   INFINITY = 99999999999999999
 
   class Plan
-    def initialize(h, p, options, filing_status, children, savings, income, expense, inflation)
+    def initialize(a, h, p, options, filing_status, children, savings, income, expense, inflation)
+      @a = a # year by income, tax, expense, ...
       @h = h
       @p = p
       @options = options
@@ -35,6 +36,10 @@ module Lifecastor
       @savings = Savings.new(savings)
     end
   
+    def header
+      @header
+    end
+
     # returns 1 or 0 for bankrupt or not
     def run
       printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @options[:verbose]
@@ -58,7 +63,7 @@ module Lifecastor
         
         printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @options[:verbose]
   
-        write_result(y, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+        write_result(y+@age, y, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
 
         if net < 0.0 
         #if net < 0.0 and y < @p.life_expectancy.to_i-@age # not counting last year
@@ -70,9 +75,9 @@ module Lifecastor
       return 0 
     end
 
-    def write_result(year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+    def write_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
       if year == 0
-        @h['year'] = Array.new << year
+        @h['age'] = Array.new << age
         @h['income'] = Array.new << income.to_i
         @h['taxable_income'] = Array.new << taxable_income.to_i
         @h['federal_tax'] = Array.new << federal_tax.to_i
@@ -81,7 +86,7 @@ module Lifecastor
         @h['leftover'] = Array.new << leftover.to_i
         @h['net'] = Array.new << net.to_i
       else
-        @h['year'] << year
+        @h['age'] << age
         @h['income'] << income.to_i
         @h['taxable_income'] << taxable_income.to_i
         @h['federal_tax'] << federal_tax.to_i
@@ -90,6 +95,16 @@ module Lifecastor
         @h['leftover'] << leftover.to_i
         @h['net'] << net.to_i
       end
+
+      @a[year] = Array.new
+      @a[year] << age
+      @a[year] << income.to_i
+      @a[year] << taxable_income.to_i
+      @a[year] << federal_tax.to_i
+      @a[year] << state_tax.to_i
+      @a[year] << expense.to_i
+      @a[year] << leftover.to_i
+      @a[year] << net.to_i
     end
   end
 
@@ -314,8 +329,10 @@ p = Utils::Properties.load_from_file("lifecastor.properties", true)
 count = 0
 total = 100
 res = [] # result set indexed by seeds 0..total constains hashes keyed by 'income, expense, ...'; each has is an array of time series
+res_array = [] # result set indexed by seeds of arrays, each 2d age by income, tax, expense, ...
 total.times { |s|
-  res << h = Hash.new() # stores the planning result hashed on income, tax, expense, ...
+  res << h = Hash.new # stores the planning result hashed on income, tax, expense, ...
+  res_array << a = Array.new # stores planning result on income, tax, expense, ... by years
 
   # user data from properties file
   seed_offset = p.seed_offset.to_i
@@ -327,24 +344,11 @@ total.times { |s|
   inflation = [p.inflation_mean.to_f, p.inflation_sd.to_f]
 
   srand(s+seed_offset) # make the randam repeatable; without it, the random will not repeat
-  count += Lifecastor::Plan.new(h, p, options, filing_status, children, savings, income, expense, inflation).run
+  count += Lifecastor::Plan.new(a, h, p, options, filing_status, children, savings, income, expense, inflation).run
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
 
-=begin 
-translate data into this format
-  ['Year', 'Sales', 'Expenses'],
-  ['2004',  100000,      40000],
-  ['2005',  117000,      46000],
-  ['2006',  66000,       112000],
-  ['2007',  103000,      54000]
-  options needs to be dynamically generated as well
-insert it into the html template  
-save the html file
-render the file by browser
-=end   
-
-def format_data_for_charting(array, xaxis, yaxis)
+def format_data_for_charting(array)
   s = '          ["Year", "Value"],'+"\n"
   array.length.times {|y|
     done = array.length-1
@@ -355,6 +359,51 @@ def format_data_for_charting(array, xaxis, yaxis)
     end
   }
   s
+end
+
+# TODO need a simple array indexed by years of arrays, each contains data for a year: income, tax, expense, ...
+# then a separate array to store the matching hearder
+def format_to_chart(header, res_array, seed) # 3d array reuslt set
+  doc = "          ["
+  header_length = header.length
+  header_length.times {|i|
+    done = header_length-1
+    if i != done
+      doc << "\'"+header[i]+"\', "
+    else
+      doc << "\'"+header[i]+"\'],\n"
+    end
+  }
+
+  length = res_array[seed].length
+  length.times {|y|
+    done = length-1
+    doc << "          [\'"
+    if y != done
+      header_length.times {|i| 
+        done = header_length-1
+        if i == 0
+          doc << res_array[seed][y][i].to_s+"\', "
+        elsif i != done
+          doc << res_array[seed][y][i].to_s+', ' 
+        else
+          doc << res_array[seed][y][i].to_s+"],\n"
+        end
+      }
+    else
+      header_length.times {|i| 
+        done = header_length-1
+        if i == 0
+          doc << res_array[seed][y][i].to_s+"\', "
+        elsif i != done
+          doc << res_array[seed][y][i].to_s+', ' 
+        else
+          doc << res_array[seed][y][i].to_s+"]\n"
+        end
+      }
+    end
+  }
+  doc
 end
 
 def insert_into_html(s, title)
@@ -390,7 +439,9 @@ def insert_into_html(s, title)
   Launchy.open("chart.html")
 end
 
-s = format_data_for_charting(res[99]['net'],'','')
+#s = format_data_for_charting(res[99]['net'])
+header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
+puts s = format_to_chart(header, res_array, 99) # 3d array reuslt set
 insert_into_html(s, 'Savings')
 
 #puts res[99]['net']
