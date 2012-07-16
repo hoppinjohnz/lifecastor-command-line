@@ -19,11 +19,11 @@ module Lifecastor
   INFINITY = 99999999999999999
 
   class Plan
-    def initialize(a, h, p, options, filing_status, children, savings, income, expense, inflation)
-      @a = a # year by income, tax, expense, ...
-      @h = h
-      @p = p
-      @options = options
+    def initialize(plan_result_array, hash, plan_props, cmd_line_opts, filing_status, children, savings, income, expense, inflation)
+      @plan_result_array = plan_result_array # year by income, tax, expense, ...
+      @hash = hash
+      @plan_props = plan_props
+      @cmd_line_opts = cmd_line_opts
       @age = income[1]
       @age_to_retire = income[2]
       @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
@@ -35,15 +35,11 @@ module Lifecastor
 
       @savings = Savings.new(savings)
     end
-  
-    def header
-      @header
-    end
 
     # returns 1 or 0 for bankrupt or not
     def run
-      printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @options[:verbose]
-      (@p.life_expectancy.to_i-@age+1).times { |y|
+      printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @cmd_line_opts[:verbose]
+      (@plan_props.life_expectancy.to_i-@age+1).times { |y|
         income = @income.of_year(y)
   
         deduction = @tax.std_deduction
@@ -52,7 +48,7 @@ module Lifecastor
         federal_tax = taxable_income * @tax.federal(taxable_income)
         state_tax = taxable_income * @tax.state(taxable_income)
   
-        expense = @expense.normal_cost(@p, y, y >= @years_to_work, y+@age == @p.life_expectancy.to_i)
+        expense = @expense.normal_cost(@plan_props, y, y >= @years_to_work, y+@age == @plan_props.life_expectancy.to_i)
   
         leftover = income - expense - federal_tax - state_tax
   
@@ -61,14 +57,14 @@ module Lifecastor
   
         @savings.update(net) # update family savings
         
-        printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @options[:verbose]
+        printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @cmd_line_opts[:verbose]
   
         write_result(y+@age, y, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
 
         if net < 0.0 
-        #if net < 0.0 and y < @p.life_expectancy.to_i-@age # not counting last year
+        #if net < 0.0 and y < @plan_props.life_expectancy.to_i-@age # not counting last year
           puts "BANKRUPT at age #{y+@age}!" 
-          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@options[:verbose]
+          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@cmd_line_opts[:verbose]
           return 1
         end
       }
@@ -77,34 +73,34 @@ module Lifecastor
 
     def write_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
       if year == 0
-        @h['age'] = Array.new << age
-        @h['income'] = Array.new << income.to_i
-        @h['taxable_income'] = Array.new << taxable_income.to_i
-        @h['federal_tax'] = Array.new << federal_tax.to_i
-        @h['state_tax'] = Array.new << state_tax.to_i
-        @h['expense'] = Array.new << expense.to_i
-        @h['leftover'] = Array.new << leftover.to_i
-        @h['net'] = Array.new << net.to_i
+        @hash['age'] = Array.new << age
+        @hash['income'] = Array.new << income.to_i
+        @hash['taxable_income'] = Array.new << taxable_income.to_i
+        @hash['federal_tax'] = Array.new << federal_tax.to_i
+        @hash['state_tax'] = Array.new << state_tax.to_i
+        @hash['expense'] = Array.new << expense.to_i
+        @hash['leftover'] = Array.new << leftover.to_i
+        @hash['net'] = Array.new << net.to_i
       else
-        @h['age'] << age
-        @h['income'] << income.to_i
-        @h['taxable_income'] << taxable_income.to_i
-        @h['federal_tax'] << federal_tax.to_i
-        @h['state_tax'] << state_tax.to_i
-        @h['expense'] << expense.to_i
-        @h['leftover'] << leftover.to_i
-        @h['net'] << net.to_i
+        @hash['age'] << age
+        @hash['income'] << income.to_i
+        @hash['taxable_income'] << taxable_income.to_i
+        @hash['federal_tax'] << federal_tax.to_i
+        @hash['state_tax'] << state_tax.to_i
+        @hash['expense'] << expense.to_i
+        @hash['leftover'] << leftover.to_i
+        @hash['net'] << net.to_i
       end
 
-      @a[year] = Array.new
-      @a[year] << age
-      @a[year] << income.to_i
-      @a[year] << taxable_income.to_i
-      @a[year] << federal_tax.to_i
-      @a[year] << state_tax.to_i
-      @a[year] << expense.to_i
-      @a[year] << leftover.to_i
-      @a[year] << net.to_i
+      @plan_result_array[year] = Array.new
+      @plan_result_array[year] << age
+      @plan_result_array[year] << income.to_i
+      @plan_result_array[year] << taxable_income.to_i
+      @plan_result_array[year] << federal_tax.to_i
+      @plan_result_array[year] << state_tax.to_i
+      @plan_result_array[year] << expense.to_i
+      @plan_result_array[year] << leftover.to_i
+      @plan_result_array[year] << net.to_i
     end
   end
 
@@ -290,16 +286,16 @@ end
 
 
 # This hash will hold all of the options parsed from the command-line by OptionParser.
-options = {}
+cmd_line_opts = {}
 
 optparse = OptionParser.new do|opts|
   # Set a banner, displayed at the top of the help screen.
   opts.banner = "Usage: ruby #{__FILE__} [options]"
 
   # Define the options, and what they do
-  options[:verbose] = false
+  cmd_line_opts[:verbose] = false
   opts.on( '-v', '--verbose', 'Output complete output' ) do
-    options[:verbose] = true
+    cmd_line_opts[:verbose] = true
   end
 
   # This displays the help screen, all programs are assumed to have this option.
@@ -323,31 +319,32 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument
 end 
 
 
-p = Utils::Properties.load_from_file("lifecastor.properties", true)
+plan_props = Utils::Properties.load_from_file("lifecastor.properties", true)
 
 # run many times to get an average view of the overall financial forecast
 count = 0
 total = 100
 res = [] # result set indexed by seeds 0..total constains hashes keyed by 'income, expense, ...'; each has is an array of time series
-res_array = [] # result set indexed by seeds of arrays, each 2d age by income, tax, expense, ...
+array_by_seeds = [] # result set indexed by seeds of arrays, each 2d age by income, tax, expense, ...
 total.times { |s|
-  res << h = Hash.new # stores the planning result hashed on income, tax, expense, ...
-  res_array << a = Array.new # stores planning result on income, tax, expense, ... by years
+  res << hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
+  array_by_seeds << plan_result_array = Array.new # stores planning result on income, tax, expense, ... by years
 
   # user data from properties file
-  seed_offset = p.seed_offset.to_i
-  filing_status = p.filing_status
+  seed_offset = plan_props.seed_offset.to_i
+  filing_status = plan_props.filing_status
   children = [['Kyle', 12], ['Chris', 10]] # [name, age]
-  savings = p.savings.to_i # more or less like emergence fund
-  income = [p.income.to_i, p.age.to_i, p.age_to_retire.to_i, p.increase_mean.to_f, p.increase_sd.to_f]
-  expense = [p.expense_mean.to_i, p.expense_sd.to_i]
-  inflation = [p.inflation_mean.to_f, p.inflation_sd.to_f]
+  savings = plan_props.savings.to_i # more or less like emergence fund
+  income = [plan_props.income.to_i, plan_props.age.to_i, plan_props.age_to_retire.to_i, plan_props.increase_mean.to_f, plan_props.increase_sd.to_f]
+  expense = [plan_props.expense_mean.to_i, plan_props.expense_sd.to_i]
+  inflation = [plan_props.inflation_mean.to_f, plan_props.inflation_sd.to_f]
 
   srand(s+seed_offset) # make the randam repeatable; without it, the random will not repeat
-  count += Lifecastor::Plan.new(a, h, p, options, filing_status, children, savings, income, expense, inflation).run
+  count += Lifecastor::Plan.new(plan_result_array, hash, plan_props, cmd_line_opts, filing_status, children, savings, income, expense, inflation).run
 }
 puts "Likelyhood of bankrupt is #{count.to_f/total*100.0}%"
 
+# single array for input
 def format_data_for_charting(array)
   s = '          ["Year", "Value"],'+"\n"
   array.length.times {|y|
@@ -361,13 +358,93 @@ def format_data_for_charting(array)
   s
 end
 
-# TODO need a simple array indexed by years of arrays, each contains data for a year: income, tax, expense, ...
+# initialize charts; if it's empty, no chart
+chart1 = plan_props.what_to_chart1.empty? ? '' : plan_props.what_to_chart1.split(',')
+chart2 = plan_props.what_to_chart2.empty? ? '' : plan_props.what_to_chart2.split(',')
+chart3 = plan_props.what_to_chart3.empty? ? '' : plan_props.what_to_chart3.split(',')
+
+def match_to_index(what, header)
+  return nil if what.empty?
+  m = Array.new
+  what.each {|w|
+    header.length.times {|i|
+      if w.include?(header[i])
+        m << i
+        break
+      end
+    }
+  }
+  m
+end
+
+def format_per_props(header, what_to_chart, array_by_seeds, seed) # what-to-chart is an array containing column names
+  return nil if what_to_chart.empty?
+  s = '          ["Age", '
+  length = what_to_chart.length
+  done = length - 1
+  length.times {|i|
+    if i != done
+      s << (what_to_chart[i] + ', ')
+    else
+      s << (what_to_chart[i] + "],\n")
+    end
+  }
+
+  match = match_to_index(what_to_chart, header)
+
+  # process the data time serieses
+  years = array_by_seeds[seed].length
+  if match.length == 1 # a special case
+    years.times {|y|
+      done = years-1
+      s << "          [\'#{array_by_seeds[seed][y][0]}\', "
+      if y != done
+        s << array_by_seeds[seed][y][match[0]].to_s+"],\n"
+      else # for last row or year
+        s << array_by_seeds[seed][y][match[0]].to_s+"]\n"
+      end
+    }
+  else
+    years.times {|y|
+      done = years-1
+      s << "          [\'#{array_by_seeds[seed][y][0]}\', "
+      if y != done
+        match.length.times {|i| 
+          done = match.length-1
+          if i == 0
+            s << array_by_seeds[seed][y][match[i]].to_s+", "
+          elsif i != done
+            s << array_by_seeds[seed][y][match[i]].to_s+', ' 
+          else # for the last column
+            s << array_by_seeds[seed][y][match[i]].to_s+"],\n"
+          end
+        }
+      else # for last row or year
+        match.length.times {|i| 
+          done = match.length-1
+          if i == 0
+            s << array_by_seeds[seed][y][match[i]].to_s+", "
+          elsif i != done
+            s << array_by_seeds[seed][y][match[i]].to_s+', ' 
+          else # for the last column
+            s << array_by_seeds[seed][y][match[i]].to_s+"]\n"
+          end
+        }
+      end
+    }
+  end
+  s
+end
+
+
+# need a simple array indexed by years of arrays, each contains data for a year: income, tax, expense, ...
 # then a separate array to store the matching hearder
-def format_to_chart(header, res_array, seed) # 3d array reuslt set
+def format_to_chart(header, array_by_seeds, seed) # 3d array reuslt set
+  # form the header line on the top
   doc = "          ["
-  header_length = header.length
-  header_length.times {|i|
-    done = header_length-1
+  columns = header.length
+  columns.times {|i|
+    done = columns-1
     if i != done
       doc << "\'"+header[i]+"\', "
     else
@@ -375,30 +452,31 @@ def format_to_chart(header, res_array, seed) # 3d array reuslt set
     end
   }
 
-  length = res_array[seed].length
-  length.times {|y|
-    done = length-1
+  # process the data time serieses
+  years = array_by_seeds[seed].length
+  years.times {|y|
+    done = years-1
     doc << "          [\'"
     if y != done
-      header_length.times {|i| 
-        done = header_length-1
+      columns.times {|i| 
+        done = columns-1
         if i == 0
-          doc << res_array[seed][y][i].to_s+"\', "
+          doc << array_by_seeds[seed][y][i].to_s+"\', "
         elsif i != done
-          doc << res_array[seed][y][i].to_s+', ' 
-        else
-          doc << res_array[seed][y][i].to_s+"],\n"
+          doc << array_by_seeds[seed][y][i].to_s+', ' 
+        else # for the last column
+          doc << array_by_seeds[seed][y][i].to_s+"],\n"
         end
       }
-    else
-      header_length.times {|i| 
-        done = header_length-1
+    else # for last row or year
+      columns.times {|i| 
+        done = columns-1
         if i == 0
-          doc << res_array[seed][y][i].to_s+"\', "
+          doc << array_by_seeds[seed][y][i].to_s+"\', "
         elsif i != done
-          doc << res_array[seed][y][i].to_s+', ' 
-        else
-          doc << res_array[seed][y][i].to_s+"]\n"
+          doc << array_by_seeds[seed][y][i].to_s+', ' 
+        else # for the last column
+          doc << array_by_seeds[seed][y][i].to_s+"]\n"
         end
       }
     end
@@ -407,7 +485,7 @@ def format_to_chart(header, res_array, seed) # 3d array reuslt set
 end
 
 def insert_into_html(s, title)
-  f = File.new("chart.html", "w+")
+  f = File.new("#{title}.html", "w+")
   f.puts "<html>"
   f.puts "  <head>"
   f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
@@ -416,15 +494,16 @@ def insert_into_html(s, title)
   f.puts "      google.setOnLoadCallback(drawChart);"
   f.puts "      function drawChart() {"
   f.puts "        var data = google.visualization.arrayToDataTable(["
+
   f.puts s
 
   f.puts "        ]);"
   f.puts "        var options = {"
   f.puts "          title: \"#{title}\""
   #f.puts           "title: 'Company Performance',"
-  #f.puts           "vAxis: {minValue: 1200000},"
+  #f.puts           "vAxis: {minValue: -1200000},"
   #f.puts           "vAxis: {gridlines: {count: 3}},"
-  #f.puts           "vAxis: {maxValue: 1500000}"
+  #f.puts           "vAxis: {maxValue: 1200000}"
   f.puts "        };"
   f.puts "        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));"
   f.puts "        chart.draw(data, options);"
@@ -436,39 +515,14 @@ def insert_into_html(s, title)
   f.puts "  </body>"
   f.puts "<html>"
   f.close
-  Launchy.open("chart.html")
+  Launchy.open("#{title}.html")
 end
 
 #s = format_data_for_charting(res[99]['net'])
 header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
-puts s = format_to_chart(header, res_array, 99) # 3d array reuslt set
+#puts s = format_to_chart(header, array_by_seeds, 99) # 3d array reuslt set
+puts s = format_per_props(header, chart1, array_by_seeds, 58) # assuming that what-to-chart is an array containing column names
+insert_into_html(s, 'All')
+sleep 3
+puts s = format_per_props(header, chart2, array_by_seeds, 58) # assuming that what-to-chart is an array containing column names
 insert_into_html(s, 'Savings')
-
-#puts res[99]['net']
-#
-#Launchy.open(
-##Gchart.line( :data => [17, 17, 11, 8, 2], 
-##              :axis_with_labels => ['x', 'y'], 
-##              :axis_labels => [['J', 'F', 'M', 'A', 'M']], 
-##              :axis_range => [nil, [0,17,]]
-#  Gchart.line(
-#           # :size => '1000x300', 
-#           # :title => "Savings vs. Years",
-#           # :bg => 'efefef',
-#           # #:legend => ['first data set label', 'second data set label'],
-#            :data => [res[99]['net']], 
-#            :axis_with_labels => ['x', 'y'],
-#            :axis_labels => [['1','2','3','4','5','6','7','8','9','10','11','12','13','14']],
-##            :axis_labels => [[res[99]['year']]],
-#            :axis_range => [nil, [0,1442009,]]
-##            #:data => [10, 30, 120, 45, 72]
-#                        ))
-##Launchy.open(
-### works Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :labels => ['x','y', 'z'])
-### works Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :labels => ['Jan','July','Jan','July','Jan']))
-##
-###Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :axis_with_labels => 'x,r',
-###            :axis_labels => [['Jan','July','Jan','July','Jan'], ['2005','2006','2007']])
-##Gchart.line(:data => [300, 100, 30, 200, 100, 200, 300, 10], :axis_with_labels => 'r,x,y',
-##            :axis_labels => ['', '11|22|33|44|55|66|77|88', '0|1o0|200|300']
-##           ))
