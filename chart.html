@@ -1,0 +1,36 @@
+<html>
+  <head>
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <script type="text/javascript">
+      google.load("visualization", "1", {packages:["corechart"]});
+      google.setOnLoadCallback(drawChart);
+      function drawChart() {
+        var data = google.visualization.arrayToDataTable([
+          ["Year", "Value"],
+          ['0', 1243227],
+          ['1', 1285630],
+          ['2', 1307804],
+          ['3', 1318360],
+          ['4', 1330430],
+          ['5', 1348895],
+          ['6', 1364649],
+          ['7', 1392077],
+          ['8', 1419746],
+          ['9', 1432915],
+          ['10', 1430324],
+          ['11', 1442009],
+          ['12', 1407767],
+          ['13', 1403842]
+        ]);
+        var options = {
+          title: "Savings"
+        };
+        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
+        chart.draw(data, options);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="chart_div" style="width: 900px; height: 400px;"></div>
+  </body>
+<html>
