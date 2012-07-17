@@ -1,9 +1,8 @@
-require 'mortgage_calc'
+require 'rubygems'
 require 'rubystats'
 require 'optparse'
 require "properties-ruby"
 require "time"
-require 'gchart'
 require 'launchy'
 
 # this module defines the following:
