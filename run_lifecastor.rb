@@ -318,7 +318,7 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument
 end 
 
 
-plan_props = Utils::Properties.load_from_file("lifecastor.properties", true)
+plan_props = Utils::Properties.load_from_file("planning.properties", true)
 
 # run many times to get an average view of the overall financial forecast
 count = 0
