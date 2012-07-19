@@ -410,6 +410,26 @@ class Chart
 end
 
 
+def average_scenario(res_set)
+  avg_res = Array.new
+  seeds = res_set.length
+  years = res_set[0].length
+  cols  = res_set[0][0].length
+  years.times {|y|
+    avg_res[y] = Array.new
+    cols.times {|c|
+      avg_res[y][c] = 0.0
+      res_set.length.times {|s|
+        avg_res[y][c] += res_set[s][y][c]
+      }
+    }
+  }
+
+  years.times {|y| cols.times {|c| avg_res[y][c] /= seeds } }
+  avg_res
+end
+
+
 # This hash will hold all of the options parsed from the command-line by OptionParser.
 cmd_line_opts = {}
 
@@ -421,6 +441,11 @@ optparse = OptionParser.new do|opts|
   cmd_line_opts[:verbose] = false
   opts.on( '-v', '--verbose', 'Output complete output' ) do
     cmd_line_opts[:verbose] = true
+  end
+
+  cmd_line_opts[:chart] = false
+  opts.on( '-c', '--chart', 'Chart the end resutls' ) do
+    cmd_line_opts[:chart] = true
   end
 
   # This displays the help screen, all programs are assumed to have this option.
@@ -457,25 +482,6 @@ inflation = [plan_props.inflation_mean.to_f, plan_props.inflation_sd.to_f]
 total = plan_props.total_number_of_scenario_runs.to_i
 
 
-def average_scenario(res_set)
-  avg_res = Array.new
-  seeds = res_set.length
-  years = res_set[0].length
-  cols  = res_set[0][0].length
-  years.times {|y|
-    avg_res[y] = Array.new
-    cols.times {|c|
-      avg_res[y][c] = 0.0
-      res_set.length.times {|s|
-        avg_res[y][c] += res_set[s][y][c]
-      }
-    }
-  }
-
-  years.times {|y| cols.times {|c| avg_res[y][c] /= seeds } }
-  avg_res
-end
-
 # run many times to get an average view of the overall financial forecast
 count = 0
 # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
@@ -492,14 +498,16 @@ total.times { |seed|
 puts "Bankrupt probability is #{count.to_f/total*100.0}%"
 
 
-header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
-# initialize charts; it's empty if properties said so
-chart1 = plan_props.what_to_chart1.empty? ? '' : plan_props.what_to_chart1.split(',')
-chart2 = plan_props.what_to_chart2.empty? ? '' : plan_props.what_to_chart2.split(',')
-
-c = Chart.new
-c.form_html_and_chart_it('All', header, chart1, result_set_in_array[58])
-sleep 3
-c.form_html_and_chart_it('Savings', header, chart2, result_set_in_array[58])
-
-#puts average_scenario(result_set_in_array)
+if cmd_line_opts[:chart]
+  header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
+  # initialize charts; it's empty if properties said so
+  chart1 = plan_props.what_to_chart1.empty? ? '' : plan_props.what_to_chart1.split(',')
+  chart2 = plan_props.what_to_chart2.empty? ? '' : plan_props.what_to_chart2.split(',')
+  
+  c = Chart.new
+  c.form_html_and_chart_it('All', header, chart1, result_set_in_array[58])
+  sleep 3
+  c.form_html_and_chart_it('Savings', header, chart2, result_set_in_array[58])
+  
+  #puts average_scenario(result_set_in_array)
+end
