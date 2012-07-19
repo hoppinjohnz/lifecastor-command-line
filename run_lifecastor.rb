@@ -179,6 +179,7 @@ module Lifecastor
         mean = p.first_two_year_factor.to_f*@mean
         sd   = p.first_two_year_factor.to_f*@sd
       elsif dead
+        # need another property for this 50% discount
         mean = 0.5 * (retired ? p.expense_after_retirement.to_f*@mean : @mean) # adjust down to 80% after retirement
         sd   = 0.5 * (retired ? p.expense_after_retirement.to_f*@sd : @sd)
       else
@@ -329,6 +330,7 @@ class Chart
     f.puts "  </body>"
     f.puts "<html>"
     f.close
+    #system("start #{title}.html")
     Launchy.open("#{title}.html")
   end
 
