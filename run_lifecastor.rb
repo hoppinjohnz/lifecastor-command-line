@@ -33,11 +33,20 @@ module Lifecastor
       @tax = Tax.new(filing_status)
 
       @savings = Savings.new(savings)
+
+      @bankrupt = 0 # 0 or 1
+      @bankrupt_age = 0
     end
 
-    # returns 1 or 0 for bankrupt or not
+    def bankrupt_age
+      @bankrupt_age
+    end
+
+    def bankrupt
+      @bankrupt
+    end
+
     def run
-      rv = 0
       printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", 
              "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @cmd_line_opts[:verbose]
       (@plan_props.life_expectancy.to_i-@age+1).times { |y|
@@ -49,7 +58,8 @@ module Lifecastor
         federal_tax = taxable_income * @tax.federal(taxable_income)
         state_tax = taxable_income * @tax.state(taxable_income)
   
-        expense = @expense.normal_cost(@plan_props, y, y >= @years_to_work, y+@age == @plan_props.life_expectancy.to_i)
+        current_age = y + @age
+        expense = @expense.normal_cost(@plan_props, y, y >= @years_to_work, current_age == @plan_props.life_expectancy.to_i)
   
         leftover = income - expense - federal_tax - state_tax
   
@@ -58,19 +68,19 @@ module Lifecastor
   
         @savings.update(net) # update family savings
         
-        output(y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @cmd_line_opts[:verbose]
+        output(current_age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if @cmd_line_opts[:verbose]
   
-        save_yearly_result(y+@age, y, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+        save_yearly_result(current_age, y, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
 
         if net < 0.0 #if net < 0.0 and y < @plan_props.life_expectancy.to_i-@age # not counting last year
-          if rv == 0 # only print out bankrupt once
-            puts "BANKRUPT at age #{y+@age}!" 
-            output(y+@age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@cmd_line_opts[:verbose]
+          if @bankrupt == 0 # only print out bankrupt once
+            puts "BANKRUPT at age #{current_age}!" 
+            output(current_age, income, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@cmd_line_opts[:verbose]
+            @bankrupt = 1
+            @bankrupt_age = current_age
           end
-          rv = 1
         end
       }
-      rv 
     end
 
     def output(age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
@@ -114,13 +124,15 @@ module Lifecastor
   end
 
   class Savings
-    def initialize(bal, rate=0.002)
-      @bal = bal
-      @rate = rate # 0.1%
+    def initialize(savings)
+      @bal = savings[0]
+      @rate_m = savings[1]
+      @rate_sd = savings[2]
     end
   
     def balance
-      @bal*(1.0 + @rate)
+      rate = Rubystats::NormalDistribution.new(@rate_m, @rate_sd).rng
+      @bal = @bal*(1.0 + rate)
     end
   
     def update(bal)
@@ -179,7 +191,6 @@ module Lifecastor
         mean = p.first_two_year_factor.to_f*@mean
         sd   = p.first_two_year_factor.to_f*@sd
       elsif dead
-        # need another property for this 50% discount
         mean = 0.5 * (retired ? p.expense_after_retirement.to_f*@mean : @mean) # adjust down to 80% after retirement
         sd   = 0.5 * (retired ? p.expense_after_retirement.to_f*@sd : @sd)
       else
@@ -330,7 +341,6 @@ class Chart
     f.puts "  </body>"
     f.puts "<html>"
     f.close
-    #system("start #{title}.html")
     Launchy.open("#{title}.html")
   end
 
@@ -412,11 +422,12 @@ class Chart
 end
 
 
-def average_scenario(res_set)
-  avg_res = Array.new
+def average_scenario(res_set) # seed x year x col
   seeds = res_set.length
   years = res_set[0].length
   cols  = res_set[0][0].length
+
+  avg_res = Array.new         # year x col
   years.times {|y|
     avg_res[y] = Array.new
     cols.times {|c|
@@ -477,7 +488,7 @@ plan_props = Utils::Properties.load_from_file("planning.properties", true)
 seed_offset = plan_props.seed_offset.to_i
 filing_status = plan_props.filing_status
 children = [['Kyle', 12], ['Chris', 10]] # [name, age]
-savings = plan_props.savings.to_i # more or less like emergence fund
+savings = [plan_props.savings.to_i, plan_props.savings_rate_mean.to_f, plan_props.savings_rate_sd.to_f]
 income = [plan_props.income.to_i, plan_props.age.to_i, plan_props.age_to_retire.to_i, plan_props.increase_mean.to_f, plan_props.increase_sd.to_f]
 expense = [plan_props.expense_mean.to_i, plan_props.expense_sd.to_i]
 inflation = [plan_props.inflation_mean.to_f, plan_props.inflation_sd.to_f]
@@ -485,20 +496,34 @@ total = plan_props.total_number_of_scenario_runs.to_i
 
 
 # run many times to get an average view of the overall financial forecast
-count = 0
 # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
 result_set_in_hash = [] 
 result_set_in_array = [] # result array indexed by seeds, each is 2-d of income, tax, expense, ... by age
+count = 0
+bankrupt_total_age = 0
 total.times { |seed|
+  puts "Scenario #{seed}"
   srand(seed+seed_offset) # make the randam repeatable; without it, the random will not repeat
 
   result_set_in_hash << result_hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
   result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
 
-  count += Lifecastor::Plan.new(result_array, result_hash, plan_props, cmd_line_opts, filing_status, children, savings, income, expense, inflation).run
+  plan = Lifecastor::Plan.new(result_array, result_hash, plan_props, cmd_line_opts, filing_status, children, savings, income, expense, inflation)
+  plan.run
+  count += plan.bankrupt
+  bankrupt_total_age += plan.bankrupt_age
 }
-puts "Bankrupt probability is #{count.to_f/total*100.0}%"
 
+printf("%s: %9.0f%s\n", "Bankrupt probability", 100 * count / plan_props.total_number_of_scenario_runs.to_f, "%")
+printf("%s: %9.0f\n", "Average bankrupt age", bankrupt_total_age / count.to_f)
+
+#puts average_scenario(result_set_in_array)
+#puts ''
+#puts average_scenario(result_set_in_array)[33]
+#puts ''
+#puts average_scenario(result_set_in_array)[33][7] # [life expectancy - age][8 columns]
+printf("%s: %10s\n", "Avg life end wealth", average_scenario(result_set_in_array)[plan_props.life_expectancy.to_i-plan_props.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+#puts average_scenario(result_set_in_array)[plan_props.life_expectancy.to_i-1][result_set_in_array[0][0].length-1]
 
 if cmd_line_opts[:chart]
   header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
@@ -510,6 +535,4 @@ if cmd_line_opts[:chart]
   c.form_html_and_chart_it('All', header, chart1, result_set_in_array[58])
   sleep 3
   c.form_html_and_chart_it('Savings', header, chart2, result_set_in_array[58])
-  
-  #puts average_scenario(result_set_in_array)
 end
