@@ -35,18 +35,17 @@ module Lifecastor
       @result_hash = result_hash
       @p_prop = p_prop
       @cl_opt = cl_opt
+
       @age = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
       @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
+
       @income = Income.new(p_prop)
-
-      @expense = Expense.new('food', p_prop)
-
-      @tax = Tax.new(p_prop.filing_status)
-
+      @expense = Expense.new(p_prop)
+      @tax = Tax.new(p_prop)
       @savings = Savings.new(p_prop)
 
-      @bankrupt = 0 # 0 or 1
+      @bankrupt = 0 # binary 0 or 1; used for counting total bankrupts
       @bankrupt_age = 0
     end
 
@@ -58,40 +57,57 @@ module Lifecastor
       @bankrupt
     end
 
+    def printout_header(cl_opt)
+      printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", 
+             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if cl_opt[:tax_free_savings]
+      printf("%-4s%13s%13s%13s%13s%13s%13s\n", 
+             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Savings") if cl_opt[:taxed_savings]
+    end
+
     def run
       puts "Scenario #{@seed+1}"
-      printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", 
-             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if @cl_opt[:verbose]
+      printout_header(@cl_opt)
       (@p_prop.life_expectancy.to_i-@age+1).times { |y|
-        income = @income.of_year(y)
-  
-        deduction = @tax.std_deduction
+        # before taxing savings for shortfalls: basic calculation
+        income         = @income.of_year(y)
+        deduction      = @tax.std_deduction
         taxable_income = income > deduction ? income - deduction : 0
-        
-        current_age = y + @age
-        expense = @expense.normal_cost(@p_prop, y, y >= @years_to_work, current_age == @p_prop.life_expectancy.to_i)
+        current_age    = y + @age
+        expense        = @expense.normal_cost(y, y >= @years_to_work)
+        st             = @tax.state(taxable_income)
+        ft             = @tax.federal(taxable_income)
+        leftover       = income - st - ft - expense
   
-        adjusted, state_tax, federal_tax, leftover = adjust_income_and_taxes(taxable_income, @tax.state(taxable_income), @tax.federal(taxable_income), expense)
-        adjustment = adjusted - income
-        taxable_income += adjustment
-
-        if leftover > 0
-          #TODO need to save the rate for auditing
+        # note: expense column is the same for both -f and -t as a result of the same number calls to rand method
+        if @cl_opt[:taxed_savings] # doing adjustment
+          adj_ti, state_tax, federal_tax, adj_leftover = afloat_income(@tax, taxable_income, expense)
+          cashed_savings = adj_ti - taxable_income # cashed out savings to make up the shortfall if leftover < 0
+puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftover = #{adj_leftover}"
+  
+          if adj_leftover > 0
+            net = @savings.balance + adj_leftover   # increase savings
+          else
+            net = @savings.balance - cashed_savings # decrease savings
+          end
+          @savings.update(net) # update family savings
+          adjusted_write_out(current_age, income+cashed_savings, adj_ti, federal_tax, state_tax, expense, net)
+  
+          # re-assign back so that the save result routine can still work
+          income += cashed_savings
+          taxable_income = adj_ti
+  
+        else # no tax on savings is simpler to understand, this is the default
           net = @savings.balance + leftover
-        else
-          net = @savings.balance - adjustment
+          @savings.update(net) # update family savings
+          write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @cl_opt[:tax_free_savings]
         end
-  
-        @savings.update(net) # update family savings
-        
-        write_out(current_age, adjusted, taxable_income, federal_tax, state_tax, expense, leftover, net) if @cl_opt[:verbose]
-  
-        save_yearly_result(current_age, y, adjusted, taxable_income, federal_tax, state_tax, expense, leftover, net)
+
+        save_yearly_result(current_age, y, income, taxable_income, ft, st, expense, leftover, net)
 
         if net < 0.0 #if net < 0.0 and y < @p_prop.life_expectancy.to_i-@age # not counting last year
           if @bankrupt == 0 # only print out bankrupt once
-            puts "            BANKRUPT at age #{current_age}!" 
-            write_out(current_age, adjusted, taxable_income, federal_tax, state_tax, expense, leftover, net) if !@cl_opt[:verbose]
+            puts "      BANKRUPT at age #{current_age}!" 
+            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@cl_opt[:tax_free_savings] and !@cl_opt[:taxed_savings]
             @bankrupt = 1
             @bankrupt_age = current_age
           end
@@ -101,19 +117,28 @@ module Lifecastor
 
     private
 
-      def static_calc(income, sr, fr, ex)
+      # this where to use capital gain tax rates
+      def calculate_taxes_and_leftover(tax, income, ex)
+        sr = tax.state_tax_rate(income) 
+        fr = tax.federal_tax_rate(income)
+#puts "sr = #{sr}, fr = #{fr}" # sr and fr are bumped up due to the added income
         st = sr * income
         ft = fr * (income - st)
         leftover = income - st - ft - ex
         return st, ft, leftover
       end
   
-      def adjust_income_and_taxes(income, sr, fr, ex)
-        st, ft, leftover = static_calc(income, sr, fr, ex)
+      # 1. st = sr * income
+      # 2. ft = fr * (income - st)
+      # 3. leftover = income - st - ft - expense
+      # 4. if leftover < 0, let income = income - leftover and goto 1.
+      #    ow, done: return income, st, ft
+      def afloat_income(tax, income, ex)
+        st, ft, leftover = calculate_taxes_and_leftover(tax, income, ex)
 #printf("%s%13.0f%s%13.0f%s%13.0f\n", "income = ", income, ", st = ", st, ", ft = ", ft)
         if leftover < -1 # using 0 causes too deep stack error
           income -= leftover # increase the income by -leftover to try to make the next leftover >= 0
-          adjust_income_and_taxes(income, sr, fr, ex)
+          afloat_income(tax, income, ex)
         else
           # this income is the increased one to drive leftover >= 0 when started with leftover < 0
           # upon return, the diff with the original income is the savings cashed out to cover the shortfall
@@ -122,9 +147,20 @@ module Lifecastor
         end
       end
   
-      def write_out(age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
-        printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.2f%13.0f\n", 
-               age, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
+      def write_out(age, income, t_income, f_tax, s_tax, expense, leftover, net)
+        if age < @age_to_retire
+          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, leftover, net)
+        else # retired
+          printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, leftover, net)
+        end
+      end
+  
+      def adjusted_write_out(age, income, t_income, f_tax, s_tax, expense, net)
+        if age < @age_to_retire
+          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, net)
+        else # retired
+          printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, net)
+        end
       end
   
       def save_yearly_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
@@ -171,7 +207,7 @@ module Lifecastor
     def balance
       #rate = Rubystats::NormalDistribution.new(@rate_m, @rate_sd).rng
       rate = u_bounded(Rubystats::NormalDistribution.new(@rate_m, @rate_sd).rng, @rate_m, @rate_sd)
-      @bal = @bal*(1.0 + rate)
+      @bal*(1.0 + rate)
     end
   
     def update(bal)
@@ -211,12 +247,13 @@ module Lifecastor
   
   class Expense
     include Utl
-    def initialize(c, p_prop)
-      @cat = c
+    def initialize(p_prop)
       @mean = p_prop.expense_mean.to_i
-      @sd = p_prop.expense_sd.to_i
+      @sd = p_prop.expense_sd.to_f
       @inf_m = p_prop.inflation_mean.to_f
       @inf_sd = p_prop.inflation_sd.to_f
+      @first_two = p_prop.first_two_year_factor.to_f
+      @expense_after = p_prop.expense_after_retirement.to_f
     end
   
     def cost(n) # need to inflation adjust here
@@ -226,20 +263,20 @@ module Lifecastor
       rand(lo..up)
     end
   
-    def normal_cost(p, n, retired, dead) 
+    def normal_cost(year, retired) 
       #inf = Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng
       inf = l_bounded(Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng, @inf_m, @inf_sd)
       @mean = @mean*(1.0 + inf) # inflation adjust here
-      if n < 2
-        mean = p.first_two_year_factor.to_f*@mean
-        sd   = p.first_two_year_factor.to_f*@sd
+      if year < 2
+        mean = @first_two*@mean
+        sd   = @first_two*@sd
 #     elsif dead
 #       # the year dead, 50% of cost reduced: note this is different from loss of life, planning goes on
 #       mean = 0.5 * (retired ? p.expense_after_retirement.to_f*@mean : @mean)
 #       sd   = 0.5 * (retired ? p.expense_after_retirement.to_f*@sd : @sd)
       else
-        mean = retired ? p.expense_after_retirement.to_f*@mean : @mean # adjust down to 80% after retirement
-        sd   = retired ? p.expense_after_retirement.to_f*@sd : @sd
+        mean = retired ? @expense_after*@mean : @mean # adjust down to 80% after retirement
+        sd   = retired ? @expense_after*@sd : @sd
       end
       l_bounded(Rubystats::NormalDistribution.new(mean, sd).rng, mean, sd)
     end
@@ -269,8 +306,8 @@ module Lifecastor
   end
 
   class Tax
-    def initialize(filing_status)
-      @fs = filing_status
+    def initialize(p_prop)
+      @fs = p_prop.filing_status
     end
 
     def std_deduction
@@ -284,7 +321,20 @@ module Lifecastor
       end
     end
   
-    def federal(income)
+    # optional tax rate, eg, capital gain rate if selling equaty
+    # Tax Bracket | Capital Gain Tax Rate
+    #             | Short Term   | Long Term
+    # --------------------------------------
+    # 10%         | 10%          | 0%
+    # 15%         | 15%          | 0%
+    # 25%         | 25%          | 15%
+    # 28%         | 28%          | 15%
+    # 33%         | 33%          | 15%
+    # 35%         | 35%          | 15%
+    def capital_gain_tax_rate
+    end
+
+    def federal_tax_rate(income)
       case income.to_i
         when -INFINITY..  0   then 0.00 # added to deal with below 0 taxable income
         when      0..  8700   then 0.10 # projected for 2012
@@ -297,7 +347,11 @@ module Lifecastor
       end
     end
   
-    def state(income)
+    def federal(income)
+      federal_tax_rate(income) * income
+    end
+
+    def state_tax_rate(income)
       case income.to_i
         when -INFINITY.. 2760    then 0.00 # projected for 2012
         when      2761.. 5520    then 0.03
@@ -307,6 +361,10 @@ module Lifecastor
         when     13801..INFINITY then 0.07
         else raise "Unknown income: #{income} in Tax::state"
       end
+    end
+
+    def state(income)
+      state_tax_rate(income) * income
     end
   end
   
@@ -501,6 +559,16 @@ optparse = OptionParser.new do|opts|
   opts.banner = "Usage: ruby #{__FILE__} [options]"
 
   # Define the options, and what they do
+  cl_opt[:taxed_savings] = false
+  opts.on( '-t', '--taxed_savings', 'Output taxed savings output' ) do
+    cl_opt[:taxed_savings] = true
+  end
+
+  cl_opt[:tax_free_savings] = false
+  opts.on( '-f', '--tax_free_savings', 'Output tax free savings output' ) do
+    cl_opt[:tax_free_savings] = true
+  end
+
   cl_opt[:verbose] = false
   opts.on( '-v', '--verbose', 'Output complete output' ) do
     cl_opt[:verbose] = true
@@ -518,11 +586,9 @@ optparse = OptionParser.new do|opts|
   end
 end
 
-# Parse the command-line. Remember there are two forms
-# of the parse method. The 'parse' method simply parses
-# ARGV, while the 'parse!' method parses ARGV and removes
-# any options found there, as well as any parameters for
-# the options. What's left is the list of files to resize.
+# Parse the command-line. Remember there are two forms of the parse method. The 'parse' method 
+# simply parses ARGV, while the 'parse!' method parses ARGV and removes any options found there, 
+# as well as any parameters for the options. What's left is the list of files to resize.
 begin
   optparse.parse!
 rescue OptionParser::InvalidOption, OptionParser::MissingArgument
@@ -531,7 +597,7 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument
   exit
 end 
 
-
+# planning properties file parsing
 p_prop = Utils::Properties.load_from_file("planning.properties", true)
 
 # run many times to get an average view of the overall financial forecast
@@ -552,11 +618,13 @@ p_prop.total_number_of_scenario_runs.to_i.times { |seed|
   bankrupt_total_age += plan.bankrupt_age
 }
 
+# summary statistics
 printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
 printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
 
 printf("%s: %12s\n", "Avg estate wealth", average_scenario(result_set_in_array)[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
 
+# charting
 if cl_opt[:chart]
   header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
   # initialize charts; it's empty if properties said so
