@@ -60,8 +60,8 @@ module Lifecastor
     def printout_header(cl_opt)
       printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", 
              "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if cl_opt[:tax_free_savings]
-      printf("%-4s%13s%13s%13s%13s%13s%13s\n", 
-             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Savings") if cl_opt[:taxed_savings]
+      printf("%-4s%13s%24s%22s%21s%23s%14s%12s\n", 
+             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if cl_opt[:taxed_savings]
     end
 
     def run
@@ -91,7 +91,7 @@ module Lifecastor
             net = @savings.balance - cashed_savings # decrease savings
           end
           @savings.update(net) # update family savings
-          adjusted_write_out(current_age, income+cashed_savings, adj_income, federal_tax, state_tax, expense, net)
+          adjusted_write_out(current_age, income, income+cashed_savings, taxable_income, adj_income-deduction, ft, federal_tax, st, state_tax, expense, leftover, net)
   
           # re-assign back so that the save result routine can still work
           income += cashed_savings
@@ -155,11 +155,13 @@ module Lifecastor
         end
       end
   
-      def adjusted_write_out(age, income, t_income, f_tax, s_tax, expense, net)
+      def adjusted_write_out(age, income, a_income, t_income, a_t_income, ft, f_tax, st, s_tax, expense, leftover, net)
         if age < @age_to_retire
-          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, net)
+          printf("%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f%13.0f%13.0f\n", 
+                 age, income, a_income, t_income, a_t_income, ft, f_tax, st, s_tax, expense, leftover, net)
         else # retired
-          printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, net)
+          printf("R%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f%13.0f%13.0f\n", 
+                 age, income, a_income, t_income, a_t_income, ft, f_tax, st, s_tax, expense, leftover, net)
         end
       end
   
