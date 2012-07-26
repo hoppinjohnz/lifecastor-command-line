@@ -1,0 +1,3 @@
+#!/bin/bash
+ruby run_lifecastor.rb -f test/planning.properties > test/zz
+diff test/z test/zz

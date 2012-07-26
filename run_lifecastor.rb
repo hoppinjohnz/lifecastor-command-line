@@ -74,27 +74,27 @@ module Lifecastor
         taxable_income = income > deduction ? income - deduction : 0
         current_age    = y + @age
         expense        = @expense.normal_cost(y, y >= @years_to_work)
-        st             = @tax.state(taxable_income)
-        ft             = @tax.federal(taxable_income)
+        st             = @tax.state_tax(income)
+        ft             = @tax.federal_tax(income)
         leftover       = income - st - ft - expense
   
         # note: expense column is the same for both -f and -t as a result of the same number calls to rand method
-        if @cl_opt[:taxed_savings] # doing adjustment
-          adj_ti, state_tax, federal_tax, adj_leftover = afloat_income(@tax, taxable_income, expense)
-          cashed_savings = adj_ti - taxable_income # cashed out savings to make up the shortfall if leftover < 0
-puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftover = #{adj_leftover}"
+        if @cl_opt[:taxed_savings] # tax savings
+          adj_income, state_tax, federal_tax, adj_leftover = afloat_income(@tax, income, expense)
+          cashed_savings = adj_income - income # cashed out savings to make up the shortfall if leftover < 0
+#puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftover = #{adj_leftover}"
   
           if adj_leftover > 0
-            net = @savings.balance + adj_leftover   # increase savings
+            net = @savings.balance + adj_leftover   # increase savings: adj_leftover = leftover???
+#puts "when adj_leftover > 0: adj_leftover = #{adj_leftover} == leftover = #{leftover}"
           else
             net = @savings.balance - cashed_savings # decrease savings
           end
           @savings.update(net) # update family savings
-          adjusted_write_out(current_age, income+cashed_savings, adj_ti, federal_tax, state_tax, expense, net)
+          adjusted_write_out(current_age, income+cashed_savings, adj_income, federal_tax, state_tax, expense, net)
   
           # re-assign back so that the save result routine can still work
           income += cashed_savings
-          taxable_income = adj_ti
   
         else # no tax on savings is simpler to understand, this is the default
           net = @savings.balance + leftover
@@ -119,20 +119,18 @@ puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftove
 
       # this where to use capital gain tax rates
       def calculate_taxes_and_leftover(tax, income, ex)
-        sr = tax.state_tax_rate(income) 
-        fr = tax.federal_tax_rate(income)
-#puts "sr = #{sr}, fr = #{fr}" # sr and fr are bumped up due to the added income
-        st = sr * income
-        ft = fr * (income - st)
+        st = tax.state_tax(income)
+        ft = tax.federal_tax(income) # taking st away may reduced the tax bracket
         leftover = income - st - ft - ex
         return st, ft, leftover
       end
   
-      # 1. st = sr * income
-      # 2. ft = fr * (income - st)
+      # only call this when leftover < 0, ie, there is a shortfall and need to cash out savings
+      # 1. get st
+      # 2. get ft
       # 3. leftover = income - st - ft - expense
-      # 4. if leftover < 0, let income = income - leftover and goto 1.
-      #    ow, done: return income, st, ft
+      # 4. if leftover < 0, let income = income - leftover and goto back to 1.
+      #    ow, done: return income, st, ft, leftover
       def afloat_income(tax, income, ex)
         st, ft, leftover = calculate_taxes_and_leftover(tax, income, ex)
 #printf("%s%13.0f%s%13.0f%s%13.0f\n", "income = ", income, ", st = ", st, ", ft = ", ft)
@@ -149,9 +147,11 @@ puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftove
   
       def write_out(age, income, t_income, f_tax, s_tax, expense, leftover, net)
         if age < @age_to_retire
-          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, leftover, net)
+          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
+                 age, income, t_income, f_tax, s_tax, expense, leftover, net)
         else # retired
-          printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", age, income, t_income, f_tax, s_tax, expense, leftover, net)
+          printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
+                 age, income, t_income, f_tax, s_tax, expense, leftover, net)
         end
       end
   
@@ -334,8 +334,8 @@ puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftove
     def capital_gain_tax_rate
     end
 
-    def federal_tax_rate(income)
-      case income.to_i
+    def federal_tax_rate(federal_taxable_income)
+      case federal_taxable_income.to_i
         when -INFINITY..  0   then 0.00 # added to deal with below 0 taxable income
         when      0..  8700   then 0.10 # projected for 2012
         when   8701.. 35350   then 0.15
@@ -343,14 +343,17 @@ puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftove
         when  85651..178650   then 0.28
         when 178651..388350   then 0.33
         when 388351..INFINITY then 0.35
-        else raise "Unknown income: #{income} in Tax::federal"
+        else raise "Unknown federal_taxable_income: #{federal_taxable_income} in Tax::federal"
       end
     end
   
-    def federal(income)
-      federal_tax_rate(income) * income
+    # not to use taxable income here but the full income
+    def federal_tax(income) 
+      federal_taxable_income = income - std_deduction - state_tax(income)
+      federal_tax_rate(federal_taxable_income) * federal_taxable_income
     end
 
+    # no deduction considered here
     def state_tax_rate(income)
       case income.to_i
         when -INFINITY.. 2760    then 0.00 # projected for 2012
@@ -363,7 +366,7 @@ puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftove
       end
     end
 
-    def state(income)
+    def state_tax(income)
       state_tax_rate(income) * income
     end
   end
@@ -597,8 +600,11 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument
   exit
 end 
 
+
 # planning properties file parsing
-p_prop = Utils::Properties.load_from_file("planning.properties", true)
+pf = "planning.properties"
+pf = "test/planning.properties" if ARGV.length > 0
+p_prop = Utils::Properties.load_from_file(pf, true)
 
 # run many times to get an average view of the overall financial forecast
 # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
