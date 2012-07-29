@@ -1,0 +1,10 @@
+GEM
+  remote: http://rubygems.org/
+  specs:
+    rubystats (0.2.3)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  rubystats
