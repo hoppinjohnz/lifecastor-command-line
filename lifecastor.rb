@@ -1,12 +1,6 @@
-require 'rubygems'
 require 'rubystats'
-require 'optparse'
 require "properties-ruby"
-require "time"
-require 'launchy'
-
 require 'optparse'
-require 'optparse/time'
 require 'ostruct'
 
 module Utl

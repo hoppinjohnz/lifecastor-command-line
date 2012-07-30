@@ -1,10 +1,18 @@
 GEM
   remote: http://rubygems.org/
   specs:
+    addressable (2.3.2)
+    launchy (2.1.1)
+      addressable (~> 2.3)
+    logeasy (0.0.8)
+    properties-ruby (0.0.4)
+      logeasy (>= 0.0.4)
     rubystats (0.2.3)
 
 PLATFORMS
   ruby
 
 DEPENDENCIES
+  launchy
+  properties-ruby
   rubystats

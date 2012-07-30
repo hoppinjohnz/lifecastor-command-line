@@ -1,5 +1,5 @@
 #!/bin/bash
-ruby run_lifecastor.rb -f test/planning.properties > test/zz.f
+ruby lifecastor.rb -f test/planning.properties > test/zz.f
 diff test/z.f test/zz.f
-ruby run_lifecastor.rb -t test/planning.properties > test/zz.t
+ruby lifecastor.rb -t test/planning.properties > test/zz.t
 diff test/z.t test/zz.t
