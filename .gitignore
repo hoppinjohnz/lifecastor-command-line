@@ -1,5 +1,6 @@
-test/z
-test/zz
+prop/*
+test/z.*
+test/zz.*
 z
 zz
 *.swp

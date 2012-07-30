@@ -5,6 +5,10 @@ require "properties-ruby"
 require "time"
 require 'launchy'
 
+require 'optparse'
+require 'optparse/time'
+require 'ostruct'
+
 module Utl
   def l_bounded(v, m, sd)
     l = m - 2.0*sd
@@ -29,12 +33,12 @@ module Lifecastor
   INFINITY = 99999999999999999
 
   class Plan
-    def initialize(seed, result_array, result_hash, p_prop, cl_opt)
+    def initialize(seed, result_array, result_hash, p_prop, clopt)
       @seed = seed
       @result_array = result_array # year by income, tax, expense, ...
       @result_hash = result_hash
       @p_prop = p_prop
-      @cl_opt = cl_opt
+      @clopt = clopt
 
       @age = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
@@ -57,16 +61,20 @@ module Lifecastor
       @bankrupt
     end
 
-    def printout_header(cl_opt)
-      printf("%-4s%13s%13s%13s%13s%13s%13s%13s\n", 
-             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if cl_opt[:tax_free_savings]
-      printf("%-4s%13s%24s%22s%21s%23s%14s%12s\n", 
-             "Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings") if cl_opt[:taxed_savings]
+    def write_out_header(clopt, seed)
+      puts "Scenario #{seed+1}"
+      if clopt.tax_free_savings
+        format = "%-4s%13s%13s%13s%13s%13s%13s%13s%13s\n"
+      elsif clopt.taxed_savings
+        format = "%-4s%13s%22s%22s%22s%22s%22s%13s%14s\n" 
+      else
+        return
+      end
+      printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Savings") 
     end
 
     def run
-      puts "Scenario #{@seed+1}"
-      printout_header(@cl_opt)
+      write_out_header(@clopt, @seed)
       (@p_prop.life_expectancy.to_i-@age+1).times { |y|
         # before taxing savings for shortfalls: basic calculation
         income         = @income.of_year(y)
@@ -79,19 +87,18 @@ module Lifecastor
         leftover       = income - st - ft - expense
   
         # note: expense column is the same for both -f and -t as a result of the same number calls to rand method
-        if @cl_opt[:taxed_savings] # tax savings
+        if @clopt.taxed_savings # tax savings
           adj_income, state_tax, federal_tax, adj_leftover = afloat_income(@tax, income, expense)
           cashed_savings = adj_income - income # cashed out savings to make up the shortfall if leftover < 0
-#puts "cashed_savings = #{cashed_savings} for leftover = #{leftover}, adj_leftover = #{adj_leftover}"
   
           if adj_leftover > 0
             net = @savings.balance + adj_leftover   # increase savings: adj_leftover = leftover???
-#puts "when adj_leftover > 0: adj_leftover = #{adj_leftover} == leftover = #{leftover}"
           else
             net = @savings.balance - cashed_savings # decrease savings
           end
           @savings.update(net) # update family savings
-          adjusted_write_out(current_age, income, income+cashed_savings, taxable_income, adj_income-deduction, ft, federal_tax, st, state_tax, expense, leftover, net)
+          adjusted_write_out(current_age, income, income+cashed_savings, taxable_income, adj_income-deduction, 
+                             ft, federal_tax, st, state_tax, expense, leftover, net)
   
           # re-assign back so that the save result routine can still work
           income += cashed_savings
@@ -99,7 +106,7 @@ module Lifecastor
         else # no tax on savings is simpler to understand, this is the default
           net = @savings.balance + leftover
           @savings.update(net) # update family savings
-          write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @cl_opt[:tax_free_savings]
+          write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.tax_free_savings
         end
 
         save_yearly_result(current_age, y, income, taxable_income, ft, st, expense, leftover, net)
@@ -107,7 +114,7 @@ module Lifecastor
         if net < 0.0 #if net < 0.0 and y < @p_prop.life_expectancy.to_i-@age # not counting last year
           if @bankrupt == 0 # only print out bankrupt once
             puts "      BANKRUPT at age #{current_age}!" 
-            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@cl_opt[:tax_free_savings] and !@cl_opt[:taxed_savings]
+            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@clopt.tax_free_savings and !@clopt.taxed_savings
             @bankrupt = 1
             @bankrupt_age = current_age
           end
@@ -145,24 +152,16 @@ module Lifecastor
         end
       end
   
-      def write_out(age, income, t_income, f_tax, s_tax, expense, leftover, net)
-        if age < @age_to_retire
-          printf("%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
-                 age, income, t_income, f_tax, s_tax, expense, leftover, net)
-        else # retired
-          printf("%4d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n", 
-                 age, income, t_income, f_tax, s_tax, expense, leftover, net)
-        end
+      def write_out(age, income, t_income, ft, st, expense, leftover, net)
+        format = "%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n"
+        format = "R"+format if age >= @age_to_retire
+        printf(format, age, income, t_income, ft, st, ft+st, expense, leftover, net)
       end
   
-      def adjusted_write_out(age, income, a_income, t_income, a_t_income, ft, f_tax, st, s_tax, expense, leftover, net)
-        if age < @age_to_retire
-          printf("%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f%13.0f%13.0f\n", 
-                 age, income, a_income, t_income, a_t_income, ft, f_tax, st, s_tax, expense, leftover, net)
-        else # retired
-          printf("R%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f%13.0f%13.0f\n", 
-                 age, income, a_income, t_income, a_t_income, ft, f_tax, st, s_tax, expense, leftover, net)
-        end
+      def adjusted_write_out(age, income, a_income, t_income, a_t_income, ft, aft, st, ast, expense, leftover, net)
+        format = "%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f/%-10.0f%11.0f%13.0f%14.0f\n"
+        format = "R"+format if age >= @age_to_retire
+        printf(format, age, income, a_income, t_income, a_t_income, ft, aft, st, ast, ft+st, aft+ast, expense, leftover, net)
       end
   
       def save_yearly_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
@@ -333,7 +332,7 @@ module Lifecastor
     # 28%         | 28%          | 15%
     # 33%         | 33%          | 15%
     # 35%         | 35%          | 15%
-    def capital_gain_tax_rate
+    def capital_gain_tax
     end
 
     def federal_tax_rate(federal_taxable_income)
@@ -556,57 +555,95 @@ def average_scenario(res_set) # seed x year x col
 end
 
 
-# This hash will hold all of the options parsed from the command-line by OptionParser.
-cl_opt = {}
+class Optparser
+  CODES = %w[iso-2022-jp shift_jis euc-jp utf8 binary]
+  CODE_ALIASES = { "jis" => "iso-2022-jp", "sjis" => "shift_jis" }
 
-optparse = OptionParser.new do|opts|
-  # Set a banner, displayed at the top of the help screen.
-  opts.banner = "Usage: ruby #{__FILE__} [options]"
+  #
+  # Return a structure describing the options.
+  #
+  def self.parse(args)
+    # The options specified on the command line will be collected in *options*.
+    # We set default values here.
+    options = OpenStruct.new
+    options.verbose = false
+    options.taxed_savings = false
+    options.tax_free_savings = false
+    options.chart = false
 
-  # Define the options, and what they do
-  cl_opt[:taxed_savings] = false
-  opts.on( '-t', '--taxed_savings', 'Output taxed savings output' ) do
-    cl_opt[:taxed_savings] = true
-  end
+    opts = OptionParser.new do |opts|
+      opts.banner = "Usage: ruby #{__FILE__} [options]"
 
-  cl_opt[:tax_free_savings] = false
-  opts.on( '-f', '--tax_free_savings', 'Output tax free savings output' ) do
-    cl_opt[:tax_free_savings] = true
-  end
+      opts.separator ""
+      opts.separator "Specific options:"
 
-  cl_opt[:verbose] = false
-  opts.on( '-v', '--verbose', 'Output complete output' ) do
-    cl_opt[:verbose] = true
-  end
+      # Boolean switch.
+      #opts.on("-v", "--[no-]verbose", "Output complete output") do |v|
+      #  options.verbose = v
+      #end
 
-  cl_opt[:chart] = false
-  opts.on( '-c', '--chart', 'Chart the end resutls' ) do
-    cl_opt[:chart] = true
-  end
+      opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates' ) do |t|
+        options.taxed_savings = t
+      end
+    
+      opts.on( '-f', '--tax_free_savings', 'No tax on cashing out savings or Roth savings' ) do |f|
+        options.tax_free_savings = f
+      end
+    
+      opts.on( '-c', '--chart', 'Chart the resutls' ) do |c|
+        options.chart = c
+      end
 
-  # This displays the help screen, all programs are assumed to have this option.
-  opts.on( '-h', '--help', 'Display this screen' ) do
-    puts opts
-    exit
-  end
-end
+      opts.separator ""
+      opts.separator "Common options:"
 
-# Parse the command-line. Remember there are two forms of the parse method. The 'parse' method 
-# simply parses ARGV, while the 'parse!' method parses ARGV and removes any options found there, 
-# as well as any parameters for the options. What's left is the list of files to resize.
-begin
-  optparse.parse!
-rescue OptionParser::InvalidOption, OptionParser::MissingArgument
-  puts $!.to_s  # Friendly output when parsing fails
-  puts optparse
+      # No argument, shows at tail.  This will print an options summary.
+      # Try it and see!
+      opts.on_tail("-h", "--help", "Show this message") do
+        puts opts
+        exit
+      end
+
+      # Another typical switch to print the version.
+      opts.on_tail("--version", "Show version") do
+        puts OptionParser::Version.join('.')
+        exit
+      end
+    end
+
+    # Parse the command-line. Remember there are two forms of the parse method. The 'parse' method 
+    # simply parses ARGV, while the 'parse!' method parses ARGV and removes any options found there, 
+    # as well as any parameters for the options. What's left is the list of files to resize.
+    begin
+      opts.parse!(args)
+    rescue OptionParser::InvalidOption, OptionParser::MissingArgument
+      # $! or $ERROR_INFO - exception information message set by the last 'raise' (last exception thrown).
+      puts "\n#{$!.to_s}\n\n"  # Friendly output when parsing fails: 
+      puts opts
+      exit
+    end 
+    options
+  end  # parse()
+end  # class Optparser
+
+
+clopt = Optparser.parse(ARGV)
+if clopt.taxed_savings and clopt.tax_free_savings
+  puts "\nError: -t and -f don't work together!'\n\n"
   exit
-end 
+end
 
 
 # planning properties file parsing
 pf = "planning.properties"
-pf = "test/planning.properties" if ARGV.length > 0
+pf = ARGV[0] if ARGV.length > 0
 p_prop = Utils::Properties.load_from_file(pf, true)
+
+#def parse_prop(p_prop)
+#  p p_prop::props
+#end
+#parse_prop(p_prop)
+#exit
 
 # run many times to get an average view of the overall financial forecast
 # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
@@ -620,7 +657,7 @@ p_prop.total_number_of_scenario_runs.to_i.times { |seed|
   result_set_in_hash << result_hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
   result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
 
-  plan = Lifecastor::Plan.new(seed, result_array, result_hash, p_prop, cl_opt)
+  plan = Lifecastor::Plan.new(seed, result_array, result_hash, p_prop, clopt)
   plan.run
   count += plan.bankrupt
   bankrupt_total_age += plan.bankrupt_age
@@ -633,15 +670,15 @@ printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) i
 printf("%s: %12s\n", "Avg estate wealth", average_scenario(result_set_in_array)[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
 
 # charting
-if cl_opt[:chart]
+if clopt.chart
   header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
   # initialize charts; it's empty if properties said so
   chart1 = p_prop.what_to_chart1.empty? ? '' : p_prop.what_to_chart1.split(',')
   chart2 = p_prop.what_to_chart2.empty? ? '' : p_prop.what_to_chart2.split(',')
   
   c = Chart.new
-  ac = average_scenario(result_set_in_array)
-  c.form_html_and_chart_it('All', header, chart1, ac)
+  as = average_scenario(result_set_in_array)
+  c.form_html_and_chart_it('All but Savings', header, chart1, as)
   sleep 1
-  c.form_html_and_chart_it('Savings', header, chart2, ac)
+  c.form_html_and_chart_it('Savings', header, chart2, as)
 end
