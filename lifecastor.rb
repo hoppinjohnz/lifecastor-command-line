@@ -2,6 +2,7 @@ require 'rubystats'
 require "properties-ruby"
 require 'optparse'
 require 'ostruct'
+require 'launchy'
 
 
 module Utl
@@ -58,18 +59,19 @@ module Lifecastor
 
     def write_out_header(clopt, seed)
       puts "Scenario #{seed+1}"
-      if clopt.tax_free_savings
-        format = "%-4s%13s%13s%13s%13s%13s%13s%13s%13s\n"
-      elsif clopt.taxed_savings
+      if clopt.taxed_savings and clopt.verbose
         format = "%-4s%13s%22s%22s%22s%22s%22s%13s%14s\n" 
+        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Savings") 
+      elsif clopt.verbose
+        format = "%-4s%13s%13s%13s%13s%13s%13s%13s%13s\n"
+        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Savings") 
       else
         return
       end
-      printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Savings") 
     end
 
     def run
-      write_out_header(@clopt, @seed) if @clopt.brief
+      write_out_header(@clopt, @seed) if @clopt.verbose
       (@p_prop.life_expectancy.to_i-@age+1).times { |y|
         # before taxing savings for shortfalls: basic calculation
         income         = @income.of_year(y)
@@ -93,7 +95,7 @@ module Lifecastor
           end
           @savings.update(net) # update family savings
           adjusted_write_out(current_age, income, income+cashed_savings, taxable_income, adj_income-deduction, 
-                             ft, federal_tax, st, state_tax, expense, leftover, net)
+                             ft, federal_tax, st, state_tax, expense, leftover, net) if @clopt.verbose
   
           # re-assign back so that the save result routine can still work
           income += cashed_savings
@@ -101,7 +103,7 @@ module Lifecastor
         else # no tax on savings is simpler to understand, this is the default
           net = @savings.balance + leftover
           @savings.update(net) # update family savings
-          write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.tax_free_savings
+          write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.verbose
         end
 
         save_yearly_result(current_age, y, income, taxable_income, ft, st, expense, leftover, net)
@@ -540,6 +542,8 @@ class Optparser
     options.taxed_savings = false
     options.tax_free_savings = false
     options.chart = false
+    options.brief = false
+    options.verbose = false
 
     opts = OptionParser.new do |opts|
       opts.banner = "Usage: ruby #{__FILE__} [options]"
@@ -552,20 +556,27 @@ class Optparser
       #  options.verbose = v
       #end
 
+      # need to combine with -v to get complete output
       opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates' ) do |t|
         options.taxed_savings = t
-        options.brief = t
       end
     
+      # no need for this, it's the default behavior
+      # need to combine with -v to get complete output
       opts.on( '-f', '--tax_free_savings', 'No tax on cashing out savings or Roth savings' ) do |f|
         options.tax_free_savings = f
-        options.brief = f
       end
     
       opts.on( '-c', '--chart', 'Chart the resutls' ) do |c|
         options.chart = c
       end
 
+      # gives columns of output
+      opts.on( '-v', '--verbose', 'Output the complete resutls' ) do |v|
+        options.verbose = v
+      end
+
+      # only gives bankrupt brief info
       opts.on( '-b', '--brief', 'Gives brief resutls' ) do |b|
         options.brief = b
       end
