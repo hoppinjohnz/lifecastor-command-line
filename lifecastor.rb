@@ -112,7 +112,7 @@ module Lifecastor
           if @bankrupt == 0 # only print out bankrupt once
             if @clopt.brief
               puts "      BANKRUPT at age #{current_age}!" 
-              write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@clopt.tax_free_savings and !@clopt.taxed_savings
+              write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@clopt.taxed_savings
             end
             @bankrupt = 1
             @bankrupt_age = current_age
@@ -540,7 +540,6 @@ class Optparser
     options = OpenStruct.new
     options.verbose = false
     options.taxed_savings = false
-    options.tax_free_savings = false
     options.chart = false
     options.brief = false
     options.verbose = false
@@ -552,19 +551,9 @@ class Optparser
       opts.separator "Specific options:"
 
       # Boolean switch.
-      #opts.on("-v", "--[no-]verbose", "Output complete output") do |v|
-      #  options.verbose = v
-      #end
-
       # need to combine with -v to get complete output
       opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates' ) do |t|
         options.taxed_savings = t
-      end
-    
-      # no need for this, it's the default behavior
-      # need to combine with -v to get complete output
-      opts.on( '-f', '--tax_free_savings', 'No tax on cashing out savings or Roth savings' ) do |f|
-        options.tax_free_savings = f
       end
     
       opts.on( '-c', '--chart', 'Chart the resutls' ) do |c|
@@ -642,10 +631,6 @@ end
 
 
 clopt = Optparser.parse(ARGV)
-if clopt.taxed_savings and clopt.tax_free_savings
-  puts "\nError: -t and -f don't work together!'\n\n"
-  exit
-end
 
 
 # planning properties file parsing
