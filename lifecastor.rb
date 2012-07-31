@@ -110,10 +110,8 @@ module Lifecastor
 
         if net < 0.0 #if net < 0.0 and y < @p_prop.life_expectancy.to_i-@age # not counting last year
           if @bankrupt == 0 # only print out bankrupt once
-            if @clopt.brief
-              puts "      BANKRUPT at age #{current_age}!" 
-              write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@clopt.taxed_savings
-            end
+            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief
+            puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
             @bankrupt = 1
             @bankrupt_age = current_age
           end
