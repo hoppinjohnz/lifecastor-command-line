@@ -3,6 +3,7 @@ require "properties-ruby"
 require 'optparse'
 require 'ostruct'
 
+
 module Utl
   def l_bounded(v, m, sd)
     l = m - 2.0*sd
@@ -14,12 +15,12 @@ module Utl
   end
 end
 
+
 # this module defines the following:
 # Lifecastor::Plan class to represent a financial planning/simulation
 # Lifecastor.run method to make a financial forecast for the family
 
-# TODO
-# retirement, death, estate planning, catastrophical events/life insurance, random income, random inflation, will, estate stats 
+# TODO retirement, death, estate planning, catastrophical events/life insurance, random income, random inflation, will, estate stats 
 
 module Lifecastor
 
@@ -524,33 +525,6 @@ class Chart
 end
 
 
-# TODO need to use a simple array then methods to make it into a 3-d array
-def average_scenario(res_set) # seed x year x col
-  seeds = res_set.length
-  years = res_set[0].length
-  cols  = res_set[0][0].length
-
-  avg_res = Array.new         # year x col
-  years.times {|y|
-    avg_res[y] = Array.new
-    cols.times {|c|
-      avg_res[y][c] = 0.0
-      res_set.length.times {|s|
-        avg_res[y][c] += res_set[s][y][c]
-      }
-    }
-  }
-
-  years.times {|y| 
-    cols.times {|c| 
-      avg_res[y][c] /= seeds 
-      avg_res[y][c] = avg_res[y][c].to_i if c == 0 # keep age column integer
-    } 
-  }
-  avg_res
-end
-
-
 class Optparser
   CODES = %w[iso-2022-jp shift_jis euc-jp utf8 binary]
   CODE_ALIASES = { "jis" => "iso-2022-jp", "sjis" => "shift_jis" }
@@ -627,6 +601,33 @@ class Optparser
     options
   end  # parse()
 end  # class Optparser
+
+
+# TODO need to use a simple array then methods to make it into a 3-d array
+def average_scenario(res_set) # seed x year x col
+  seeds = res_set.length
+  years = res_set[0].length
+  cols  = res_set[0][0].length
+
+  avg_res = Array.new         # year x col
+  years.times {|y|
+    avg_res[y] = Array.new
+    cols.times {|c|
+      avg_res[y][c] = 0.0
+      res_set.length.times {|s|
+        avg_res[y][c] += res_set[s][y][c]
+      }
+    }
+  }
+
+  years.times {|y| 
+    cols.times {|c| 
+      avg_res[y][c] /= seeds 
+      avg_res[y][c] = avg_res[y][c].to_i if c == 0 # keep age column integer
+    } 
+  }
+  avg_res
+end
 
 
 clopt = Optparser.parse(ARGV)
