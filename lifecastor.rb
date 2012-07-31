@@ -68,7 +68,7 @@ module Lifecastor
     end
 
     def run
-      write_out_header(@clopt, @seed)
+      write_out_header(@clopt, @seed) if @clopt.brief
       (@p_prop.life_expectancy.to_i-@age+1).times { |y|
         # before taxing savings for shortfalls: basic calculation
         income         = @income.of_year(y)
@@ -107,8 +107,10 @@ module Lifecastor
 
         if net < 0.0 #if net < 0.0 and y < @p_prop.life_expectancy.to_i-@age # not counting last year
           if @bankrupt == 0 # only print out bankrupt once
-            puts "      BANKRUPT at age #{current_age}!" 
-            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@clopt.tax_free_savings and !@clopt.taxed_savings
+            if @clopt.brief
+              puts "      BANKRUPT at age #{current_age}!" 
+              write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if !@clopt.tax_free_savings and !@clopt.taxed_savings
+            end
             @bankrupt = 1
             @bankrupt_age = current_age
           end
@@ -578,14 +580,20 @@ class Optparser
 
       opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates' ) do |t|
         options.taxed_savings = t
+        options.brief = t
       end
     
       opts.on( '-f', '--tax_free_savings', 'No tax on cashing out savings or Roth savings' ) do |f|
         options.tax_free_savings = f
+        options.brief = f
       end
     
       opts.on( '-c', '--chart', 'Chart the resutls' ) do |c|
         options.chart = c
+      end
+
+      opts.on( '-b', '--brief', 'Gives brief resutls' ) do |b|
+        options.brief = b
       end
 
       opts.separator ""
