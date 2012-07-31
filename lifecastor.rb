@@ -536,10 +536,9 @@ class Optparser
     # The options specified on the command line will be collected in *options*.
     # We set default values here.
     options = OpenStruct.new
-    options.verbose = false
-    options.taxed_savings = false
-    options.chart = false
     options.brief = false
+    options.chart = false
+    options.taxed_savings = false
     options.verbose = false
 
     opts = OptionParser.new do |opts|
@@ -549,23 +548,23 @@ class Optparser
       opts.separator "Specific options:"
 
       # Boolean switch.
-      # need to combine with -v to get complete output
-      opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates' ) do |t|
-        options.taxed_savings = t
+      # only gives bankrupt brief info
+      opts.on( '-b', '--brief', 'Output brief resutls of bankrupt info. Use -v to see more detaills.' ) do |b|
+        options.brief = b
       end
-    
-      opts.on( '-c', '--chart', 'Chart the resutls' ) do |c|
+
+      opts.on( '-c', '--chart', 'Chart the resutls as configured by your planning.propreties file.' ) do |c|
         options.chart = c
       end
 
-      # gives columns of output
-      opts.on( '-v', '--verbose', 'Output the complete resutls' ) do |v|
-        options.verbose = v
+      # need to combine with -v to get complete output
+      opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates.' ) do |t|
+        options.taxed_savings = t
       end
-
-      # only gives bankrupt brief info
-      opts.on( '-b', '--brief', 'Gives brief resutls' ) do |b|
-        options.brief = b
+    
+      # gives columns of output
+      opts.on( '-v', '--verbose', 'Output the complete resutls.' ) do |v|
+        options.verbose = v
       end
 
       opts.separator ""
@@ -575,12 +574,6 @@ class Optparser
       # Try it and see!
       opts.on_tail("-h", "--help", "Show this message") do
         puts opts
-        exit
-      end
-
-      # Another typical switch to print the version.
-      opts.on_tail("--version", "Show version") do
-        puts OptionParser::Version.join('.')
         exit
       end
     end
@@ -664,7 +657,7 @@ p_prop.total_number_of_scenario_runs.to_i.times { |seed|
 printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
 printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
 
-printf("%s: %12s\n", "Avg estate wealth", average_scenario(result_set_in_array)[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+printf("%s: %11s\n", "Avg horizon wealth", average_scenario(result_set_in_array)[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
 
 # charting
 if clopt.chart
