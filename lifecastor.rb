@@ -112,8 +112,7 @@ module Lifecastor
           if @bankrupt == 0 # only print out bankrupt once
             @bankrupt = 1
             @bankrupt_age = current_age
-            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief
-            puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
+            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose # not to be called for -bv, only called            puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
           end
         end
       }
@@ -414,7 +413,8 @@ class Chart
 
     data_to_chart = form_chart_data(header, chart1, res_array)
   
-    f = File.new("#{title}.html", "w+")
+    fn = title.gsub(/ /, '_') # just for IE: it could not handle spaces in file names
+    f = File.new("#{fn}.html", "w+")
     f.puts "<html>"
     f.puts "  <head>"
     f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
