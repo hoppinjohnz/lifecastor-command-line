@@ -1,3 +1,4 @@
+require 'rubygems' # required for Windows
 require 'rubystats'
 require "properties-ruby"
 require 'optparse'
@@ -417,7 +418,8 @@ class Chart
     f = File.new("#{fn}.html", "w+")
     f.puts "<html>"
     f.puts "  <head>"
-    f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
+    f.puts "    <script type=\"text/javascript\" src=\"jsapi\"></script>" # just use local jsapi
+   #f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
     f.puts "    <script type=\"text/javascript\">"
     f.puts "      google.load(\"visualization\", \"1\", {packages:[\"corechart\"]});"
     f.puts "      google.setOnLoadCallback(drawChart);"
