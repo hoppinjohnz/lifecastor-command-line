@@ -113,7 +113,8 @@ module Lifecastor
           if @bankrupt == 0 # only print out bankrupt once
             @bankrupt = 1
             @bankrupt_age = current_age
-            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose # not to be called for -bv, only called            puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
+            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose # not to be called for -bv, only called for -b
+            puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
           end
         end
       }
@@ -596,6 +597,7 @@ class Optparser
 end  # class Optparser
 
 
+
 # TODO need to use a simple array then methods to make it into a 3-d array
 def average_scenario(res_set) # seed x year x col
   seeds = res_set.length
@@ -624,18 +626,10 @@ end
 
 
 clopt = Optparser.parse(ARGV)
-
-
 # planning properties file parsing
-pf = "planning.properties"
-pf = ARGV[0] if ARGV.length > 0
-p_prop = Utils::Properties.load_from_file(pf, true)
-
-#def parse_prop(p_prop)
-#  p p_prop::props
-#end
-#parse_prop(p_prop)
-#exit
+ppf = "planning.properties"
+ppf = ARGV[0] if ARGV.length > 0
+p_prop = Utils::Properties.load_from_file(ppf, true)
 
 # run many times to get an average view of the overall financial forecast
 # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
@@ -655,10 +649,9 @@ p_prop.total_number_of_scenario_runs.to_i.times { |seed|
   bankrupt_total_age += plan.bankrupt_age
 }
 
-# summary statistics
+# end summary results
 printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
 printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
-
 printf("%s: %11s\n", "Avg horizon wealth", average_scenario(result_set_in_array)[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
 
 # charting
