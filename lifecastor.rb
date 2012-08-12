@@ -112,8 +112,8 @@ module Lifecastor
         if net < 0.0 #if net < 0.0 and y < @p_prop.life_expectancy.to_i-@age # not counting last year
           if @bankrupt == 0 # only print out bankrupt once
             @bankrupt = 1
-            @bankrupt_age = current_age
-            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose # not to be called for -bv, only called for -b
+            @bankrupt_age = current_age                                         # not to be called for -bv, only called for -b
+            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose 
             puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
           end
         end
@@ -652,7 +652,8 @@ p_prop.total_number_of_scenario_runs.to_i.times { |seed|
 # end summary results
 printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
 printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
-printf("%s: %11s\n", "Avg horizon wealth", average_scenario(result_set_in_array)[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+a_scen = average_scenario(result_set_in_array)
+printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
 
 # charting
 if clopt.chart
@@ -662,8 +663,7 @@ if clopt.chart
   chart2 = p_prop.what_to_chart2.empty? ? '' : p_prop.what_to_chart2.split(',')
   
   c = Chart.new
-  as = average_scenario(result_set_in_array)
-  c.form_html_and_chart_it('All but Savings', header, chart1, as)
+  c.form_html_and_chart_it('All but Savings', header, chart1, a_scen)
   sleep 1
-  c.form_html_and_chart_it('Savings', header, chart2, as)
+  c.form_html_and_chart_it('Savings', header, chart2, a_scen)
 end
