@@ -62,10 +62,10 @@ module Lifecastor
       puts "Scenario #{seed+1}"
       if clopt.taxed_savings and clopt.verbose
         format = "%-4s%13s%22s%22s%22s%22s%22s%13s%14s\n" 
-        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Savings") 
+        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Net Worth") 
       elsif clopt.verbose
         format = "%-4s%13s%13s%13s%13s%13s%13s%13s%13s\n"
-        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Savings") 
+        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Net Worth") 
       else
         return
       end
@@ -627,7 +627,7 @@ end
 
 clopt = Optparser.parse(ARGV)
 # planning properties file parsing
-ppf = "planning.properties"
+ppf = "plan.properties"
 ppf = ARGV[0] if ARGV.length > 0
 p_prop = Utils::Properties.load_from_file(ppf, true)
 
@@ -657,13 +657,13 @@ printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_
 
 # charting
 if clopt.chart
-  header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Savings"]
+  header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Net Worth"]
   # initialize charts; it's empty if properties said so
   chart1 = p_prop.what_to_chart1.empty? ? '' : p_prop.what_to_chart1.split(',')
   chart2 = p_prop.what_to_chart2.empty? ? '' : p_prop.what_to_chart2.split(',')
   
   c = Chart.new
-  c.form_html_and_chart_it('All but Savings', header, chart1, a_scen)
+  c.form_html_and_chart_it('All but Net Worth', header, chart1, a_scen)
   sleep 1
-  c.form_html_and_chart_it('Savings', header, chart2, a_scen)
+  c.form_html_and_chart_it('Net Worth', header, chart2, a_scen)
 end

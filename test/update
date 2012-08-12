@@ -1,0 +1,3 @@
+#!/bin/bash
+cp -p zz.f z.f
+cp -p zz.t z.t
