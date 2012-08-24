@@ -452,7 +452,7 @@ class Chart
 
   private
 
-    def sub_array_indexes(subarray, superarray) # return the array of indexes into superarray indicating where subarray are
+    def sub_array_indexes(subarray, superarray) # return an array of indexes into superarray indicating where subarray are
       return nil if subarray.empty?
       m = Array.new # to store indexes of subarray into superarray
       subarray.each {|w|
@@ -463,7 +463,7 @@ class Chart
           end
         }
       }
-      puts 'Error: m.legnth != subarray.length' if m.length != subarray.length
+      puts "Error: m.legnth(#{m.length}) != subarray.length(#{subarray.length})" if m.length != subarray.length
       m
     end
     
