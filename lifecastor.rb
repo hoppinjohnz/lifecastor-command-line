@@ -407,263 +407,270 @@ module Lifecastor
       @payment = p
     end
   end
-end
 
 
-class Chart
-  def form_html_and_chart_it(title, header, chart1, res_array) # array containing column names
-
-    data_to_chart = form_chart_data(header, chart1, res_array)
+  class Chart
+    def form_html_and_chart_it(title, header, chart1, res_array) # array containing column names
   
-    fn = title.gsub(/ /, '_') # just for IE: it could not handle spaces in file names
-    f = File.new("#{fn}.html", "w+")
-    f.puts "<html>"
-    f.puts "  <head>"
-    f.puts "    <script type=\"text/javascript\" src=\"lib/jsapi\"></script>" # just use local jsapi
-   #f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
-    f.puts "    <script type=\"text/javascript\">"
-    f.puts "      google.load(\"visualization\", \"1\", {packages:[\"corechart\"]});"
-    f.puts "      google.setOnLoadCallback(drawChart);"
-    f.puts "      function drawChart() {"
-    f.puts "        var data = google.visualization.arrayToDataTable(["
+      data_to_chart = form_chart_data(header, chart1, res_array)
+    
+      fn = title.gsub(/ /, '_') # just for IE: it could not handle spaces in file names
+      f = File.new("#{fn}.html", "w+")
+      f.puts "<html>"
+      f.puts "  <head>"
+      f.puts "    <script type=\"text/javascript\" src=\"lib/jsapi\"></script>" # just use local jsapi
+     #f.puts "    <script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
+      f.puts "    <script type=\"text/javascript\">"
+      f.puts "      google.load(\"visualization\", \"1\", {packages:[\"corechart\"]});"
+      f.puts "      google.setOnLoadCallback(drawChart);"
+      f.puts "      function drawChart() {"
+      f.puts "        var data = google.visualization.arrayToDataTable(["
+    
+      f.puts data_to_chart
+    
+      f.puts "        ]);"
+      f.puts "        var options = {"
+      f.puts "          title: \"#{title}\""
+      #f.puts           "title: 'Company Performance',"
+      #f.puts           "vAxis: {minValue: -1200000},"
+      #f.puts           "vAxis: {gridlines: {count: 3}},"
+      #f.puts           "vAxis: {maxValue: 1200000}"
+      f.puts "        };"
+      f.puts "        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));"
+      f.puts "        chart.draw(data, options);"
+      f.puts "      }"
+      f.puts "    </script>"
+      f.puts "  </head>"
+      f.puts "  <body>"
+      f.puts "    <div id=\"chart_div\" style=\"width: 900px; height: 400px;\"></div>"
+      f.puts "  </body>"
+      f.puts "<html>"
+      f.close
+      Launchy.open("#{fn}.html")
+    end
   
-    f.puts data_to_chart
+    private
   
-    f.puts "        ]);"
-    f.puts "        var options = {"
-    f.puts "          title: \"#{title}\""
-    #f.puts           "title: 'Company Performance',"
-    #f.puts           "vAxis: {minValue: -1200000},"
-    #f.puts           "vAxis: {gridlines: {count: 3}},"
-    #f.puts           "vAxis: {maxValue: 1200000}"
-    f.puts "        };"
-    f.puts "        var chart = new google.visualization.LineChart(document.getElementById('chart_div'));"
-    f.puts "        chart.draw(data, options);"
-    f.puts "      }"
-    f.puts "    </script>"
-    f.puts "  </head>"
-    f.puts "  <body>"
-    f.puts "    <div id=\"chart_div\" style=\"width: 900px; height: 400px;\"></div>"
-    f.puts "  </body>"
-    f.puts "<html>"
-    f.close
-    Launchy.open("#{fn}.html")
-  end
-
-  private
-
-    def sub_array_indexes(subarray, superarray) # return an array of indexes into superarray indicating where subarray are
-      return nil if subarray.empty?
-      m = Array.new # to store indexes of subarray into superarray
-      subarray.each {|w|
-        superarray.length.times {|i|
-          if w.include?(superarray[i])
-            m << i
-            break
+      def sub_array_indexes(subarray, superarray) # return an array of indexes into superarray indicating where subarray are
+        return nil if subarray.empty?
+        m = Array.new # to store indexes of subarray into superarray
+        subarray.each {|w|
+          superarray.length.times {|i|
+            if w.include?(superarray[i])
+              m << i
+              break
+            end
+          }
+        }
+        puts "Error: m.legnth(#{m.length}) != subarray.length(#{subarray.length})" if m.length != subarray.length
+        m
+      end
+      
+      def form_chart_data(header, what_to_chart, res_array) # what-to-chart is an array containing column names
+        return nil if what_to_chart.empty?
+        s = '          ["Age", '
+        length = what_to_chart.length
+        done = length - 1
+        length.times {|i|
+          if i != done
+            s << (what_to_chart[i] + ', ')
+          else
+            s << (what_to_chart[i] + "],\n")
           end
         }
-      }
-      puts "Error: m.legnth(#{m.length}) != subarray.length(#{subarray.length})" if m.length != subarray.length
-      m
-    end
-    
-    def form_chart_data(header, what_to_chart, res_array) # what-to-chart is an array containing column names
-      return nil if what_to_chart.empty?
-      s = '          ["Age", '
-      length = what_to_chart.length
-      done = length - 1
-      length.times {|i|
-        if i != done
-          s << (what_to_chart[i] + ', ')
+      
+        match = sub_array_indexes(what_to_chart, header)
+      
+        # process the data time serieses
+        years = res_array.length
+        if match.length == 1 # a special case
+          years.times {|y|
+            done = years-1
+            s << "          [\'#{res_array[y][0]}\', "
+            if y != done
+              s << res_array[y][match[0]].to_s+"],\n"
+            else # for last row or year
+              s << res_array[y][match[0]].to_s+"]\n"
+            end
+          }
         else
-          s << (what_to_chart[i] + "],\n")
+          years.times {|y|
+            done = years-1
+            s << "          [\'#{res_array[y][0]}\', "
+            if y != done
+              match.length.times {|i| 
+                done = match.length-1
+                if i == 0
+                  s << res_array[y][match[i]].to_s+", "
+                elsif i != done
+                  s << res_array[y][match[i]].to_s+', ' 
+                else # for the last column
+                  s << res_array[y][match[i]].to_s+"],\n"
+                end
+              }
+            else # for last row or year
+              match.length.times {|i| 
+                done = match.length-1
+                if i == 0
+                  s << res_array[y][match[i]].to_s+", "
+                elsif i != done
+                  s << res_array[y][match[i]].to_s+', ' 
+                else # for the last column
+                  s << res_array[y][match[i]].to_s+"]\n"
+                end
+              }
+            end
+          }
         end
-      }
-    
-      match = sub_array_indexes(what_to_chart, header)
-    
-      # process the data time serieses
-      years = res_array.length
-      if match.length == 1 # a special case
-        years.times {|y|
-          done = years-1
-          s << "          [\'#{res_array[y][0]}\', "
-          if y != done
-            s << res_array[y][match[0]].to_s+"],\n"
-          else # for last row or year
-            s << res_array[y][match[0]].to_s+"]\n"
-          end
-        }
-      else
-        years.times {|y|
-          done = years-1
-          s << "          [\'#{res_array[y][0]}\', "
-          if y != done
-            match.length.times {|i| 
-              done = match.length-1
-              if i == 0
-                s << res_array[y][match[i]].to_s+", "
-              elsif i != done
-                s << res_array[y][match[i]].to_s+', ' 
-              else # for the last column
-                s << res_array[y][match[i]].to_s+"],\n"
-              end
-            }
-          else # for last row or year
-            match.length.times {|i| 
-              done = match.length-1
-              if i == 0
-                s << res_array[y][match[i]].to_s+", "
-              elsif i != done
-                s << res_array[y][match[i]].to_s+', ' 
-              else # for the last column
-                s << res_array[y][match[i]].to_s+"]\n"
-              end
-            }
-          end
-        }
+        s
       end
-      s
-    end
-end
-
-
-class Optparser
-  CODES = %w[iso-2022-jp shift_jis euc-jp utf8 binary]
-  CODE_ALIASES = { "jis" => "iso-2022-jp", "sjis" => "shift_jis" }
-
-  #
-  # Return a structure describing the options.
-  #
-  def self.parse(args)
-    # The options specified on the command line will be collected in *options*.
-    # We set default values here.
-    options = OpenStruct.new
-    options.brief = false
-    options.chart = false
-    options.taxed_savings = false
-    options.verbose = false
-
-    opts = OptionParser.new do |opts|
-      opts.banner = "Usage: ruby #{__FILE__} [options]"
-
-      opts.separator ""
-      opts.separator "Specific options:"
-
-      # Boolean switch.
-      # only gives bankrupt brief info
-      opts.on( '-b', '--brief', 'Output brief resutls of bankrupt info. Use -v to see more detaills.' ) do |b|
-        options.brief = b
+  end
+  
+  
+  class Optparser
+    CODES = %w[iso-2022-jp shift_jis euc-jp utf8 binary]
+    CODE_ALIASES = { "jis" => "iso-2022-jp", "sjis" => "shift_jis" }
+  
+    #
+    # Return a structure describing the options.
+    #
+    def self.parse(args)
+      # The options specified on the command line will be collected in *options*.
+      # We set default values here.
+      options = OpenStruct.new
+      options.brief = false
+      options.chart = false
+      options.taxed_savings = false
+      options.verbose = false
+  
+      opts = OptionParser.new do |opts|
+        opts.banner = "Usage: ruby #{__FILE__} [options]"
+  
+        opts.separator ""
+        opts.separator "Specific options:"
+  
+        # Boolean switch.
+        # only gives bankrupt brief info
+        opts.on( '-b', '--brief', 'Output brief resutls of bankrupt info. Use -v to see more detaills.' ) do |b|
+          options.brief = b
+        end
+  
+        opts.on( '-c', '--chart', 'Chart the resutls as configured by your planning.propreties file.' ) do |c|
+          options.chart = c
+        end
+  
+        # need to combine with -v to get complete output
+        opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates.' ) do |t|
+          options.taxed_savings = t
+        end
+      
+        # gives columns of output
+        opts.on( '-v', '--verbose', 'Output the complete resutls.' ) do |v|
+          options.verbose = v
+        end
+  
+        # use this option when run within rails
+        opts.on( '-q', '--quiet', 'Output nothing to the std output.' ) do |q|
+          options.quiet = q
+        end
+  
+        opts.separator ""
+        opts.separator "Common options:"
+  
+        # No argument, shows at tail.  This will print an options summary.
+        # Try it and see!
+        opts.on_tail("-h", "--help", "Show this message") do
+          puts opts
+          exit
+        end
       end
-
-      opts.on( '-c', '--chart', 'Chart the resutls as configured by your planning.propreties file.' ) do |c|
-        options.chart = c
-      end
-
-      # need to combine with -v to get complete output
-      opts.on( '-t', '--taxed_savings', 'Tax savings at short term capital gain tax rates which are the same as regular income tax rates.' ) do |t|
-        options.taxed_savings = t
-      end
-    
-      # gives columns of output
-      opts.on( '-v', '--verbose', 'Output the complete resutls.' ) do |v|
-        options.verbose = v
-      end
-
-      opts.separator ""
-      opts.separator "Common options:"
-
-      # No argument, shows at tail.  This will print an options summary.
-      # Try it and see!
-      opts.on_tail("-h", "--help", "Show this message") do
+  
+      # Parse the command-line. Remember there are two forms of the parse method. The 'parse' method 
+      # simply parses ARGV, while the 'parse!' method parses ARGV and removes any options found there, 
+      # as well as any parameters for the options. What's left is the list of files to resize.
+      begin
+        opts.parse!(args)
+      rescue OptionParser::InvalidOption, OptionParser::MissingArgument
+        # $! or $ERROR_INFO - exception information message set by the last 'raise' (last exception thrown).
+        puts "\n#{$!.to_s}\n\n"  # Friendly output when parsing fails: 
         puts opts
         exit
-      end
-    end
-
-    # Parse the command-line. Remember there are two forms of the parse method. The 'parse' method 
-    # simply parses ARGV, while the 'parse!' method parses ARGV and removes any options found there, 
-    # as well as any parameters for the options. What's left is the list of files to resize.
-    begin
-      opts.parse!(args)
-    rescue OptionParser::InvalidOption, OptionParser::MissingArgument
-      # $! or $ERROR_INFO - exception information message set by the last 'raise' (last exception thrown).
-      puts "\n#{$!.to_s}\n\n"  # Friendly output when parsing fails: 
-      puts opts
-      exit
-    end 
-    options
-  end  # parse()
-end  # class Optparser
-
-
-
-# TODO need to use a simple array then methods to make it into a 3-d array
-def average_scenario(res_set) # seed x year x col
-  seeds = res_set.length
-  years = res_set[0].length
-  cols  = res_set[0][0].length
-
-  avg_res = Array.new         # year x col
-  years.times {|y|
-    avg_res[y] = Array.new
-    cols.times {|c|
-      avg_res[y][c] = 0.0
-      res_set.length.times {|s|
-        avg_res[y][c] += res_set[s][y][c]
+      end 
+      options
+    end  # parse()
+  end  # class Optparser
+  
+  
+  
+  # TODO need to use a simple array then methods to make it into a 3-d array
+  def Lifecastor.average_scenario(res_set) # seed x year x col
+    seeds = res_set.length
+    years = res_set[0].length
+    cols  = res_set[0][0].length
+  
+    avg_res = Array.new         # year x col
+    years.times {|y|
+      avg_res[y] = Array.new
+      cols.times {|c|
+        avg_res[y][c] = 0.0
+        res_set.length.times {|s|
+          avg_res[y][c] += res_set[s][y][c]
+        }
       }
     }
-  }
-
-  years.times {|y| 
-    cols.times {|c| 
-      avg_res[y][c] /= seeds 
-      avg_res[y][c] = avg_res[y][c].to_i if c == 0 # keep age column integer
-    } 
-  }
-  avg_res
-end
-
-
-clopt = Optparser.parse(ARGV)
-# planning properties file parsing
-ppf = "plan.properties"
-ppf = ARGV[0] if ARGV.length > 0
-p_prop = Utils::Properties.load_from_file(ppf, true)
-
-# run many times to get an average view of the overall financial forecast
-# result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
-result_set_in_hash = [] 
-result_set_in_array = [] # result array indexed by seeds, each is 2-d of income, tax, expense, ... by age
-count = 0
-bankrupt_total_age = 0
-p_prop.total_number_of_scenario_runs.to_i.times { |seed|
-  srand(seed+p_prop.seed_offset.to_i) # make the randam repeatable; without it, the random will not repeat
-
-  result_set_in_hash << result_hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
-  result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
-
-  plan = Lifecastor::Plan.new(seed, result_array, result_hash, p_prop, clopt)
-  plan.run
-  count += plan.bankrupt
-  bankrupt_total_age += plan.bankrupt_age
-}
-
-# end summary results
-printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
-printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
-a_scen = average_scenario(result_set_in_array)
-printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
-
-# charting
-if clopt.chart
-  header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Net Worth"]
-  # initialize charts; it's empty if properties said so
-  chart1 = p_prop.what_to_chart1.empty? ? '' : p_prop.what_to_chart1.split(',')
-  chart2 = p_prop.what_to_chart2.empty? ? '' : p_prop.what_to_chart2.split(',')
   
-  c = Chart.new
-  c.form_html_and_chart_it('All but Net Worth', header, chart1, a_scen)
-  sleep 1
-  c.form_html_and_chart_it('Net Worth', header, chart2, a_scen)
+    years.times {|y| 
+      cols.times {|c| 
+        avg_res[y][c] /= seeds 
+        avg_res[y][c] = avg_res[y][c].to_i if c == 0 # keep age column integer
+      } 
+    }
+    avg_res
+  end
+  
+  def Lifecastor.run  
+    clopt = Optparser.parse(ARGV)
+    # planning properties file parsing
+    ppf = "plan.properties"
+    ppf = ARGV[0] if ARGV.length > 0
+    p_prop = Utils::Properties.load_from_file(ppf, true)
+    
+    # run many times to get an average view of the overall financial forecast
+    # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
+    result_set_in_hash = [] 
+    result_set_in_array = [] # result array indexed by seeds, each is 2-d of income, tax, expense, ... by age
+    count = 0
+    bankrupt_total_age = 0
+    p_prop.total_number_of_scenario_runs.to_i.times { |seed|
+      srand(seed+p_prop.seed_offset.to_i) # make the randam repeatable; without it, the random will not repeat
+    
+      result_set_in_hash << result_hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
+      result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
+    
+      plan = Lifecastor::Plan.new(seed, result_array, result_hash, p_prop, clopt)
+      plan.run
+      count += plan.bankrupt
+      bankrupt_total_age += plan.bankrupt_age
+    }
+    
+    # end summary results
+    printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
+    printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
+    a_scen = Lifecastor.average_scenario(result_set_in_array)
+    printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+    
+    # charting
+    if clopt.chart
+      header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Net Worth"]
+      # initialize charts; it's empty if properties said so
+      chart1 = p_prop.what_to_chart1.empty? ? '' : p_prop.what_to_chart1.split(',')
+      chart2 = p_prop.what_to_chart2.empty? ? '' : p_prop.what_to_chart2.split(',')
+      
+      c = Chart.new
+      c.form_html_and_chart_it('All but Net Worth', header, chart1, a_scen)
+      sleep 1
+      c.form_html_and_chart_it('Net Worth', header, chart2, a_scen)
+    end
+  end
 end
+
