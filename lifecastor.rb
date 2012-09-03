@@ -19,8 +19,9 @@ end
 
 
 # this module defines the following:
-# Lifecastor::Plan class to represent a financial planning/simulation
-# Lifecastor.run method to make a financial forecast for the family
+# Lifecastor::Plan class represents a specific financial plan: carry the input data, do the planning, and hold the results
+# Lifecastor.run method makes a series of simulation runs for the same plan
+# Lifecastor.average_simulation calculates the overall average of the simulation runs
 
 # TODO retirement, death, estate planning, catastrophical events/life insurance, random income, random inflation, will, estate stats 
 
@@ -30,8 +31,8 @@ module Lifecastor
   INFINITY = 99999999999999999
 
   class Plan
-    def initialize(seed, result_array, result_hash, p_prop, clopt)
-      @seed = seed
+    def initialize(sim, result_array, result_hash, p_prop, clopt)
+      @sim = sim # only needed for output simulation numbers
       @result_array = result_array # year by income, tax, expense, ...
       @result_hash = result_hash
       @p_prop = p_prop
@@ -41,25 +42,27 @@ module Lifecastor
       @age_to_retire = p_prop.age_to_retire.to_i
       @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
 
+      # TOTO liabilities, children, ...
       @income = Income.new(p_prop)
       @expense = Expense.new(p_prop)
       @tax = Tax.new(p_prop)
       @savings = Savings.new(p_prop)
 
+      # TODO will have more data points to collect
       @bankrupt = 0 # binary 0 or 1; used for counting total bankrupts
       @bankrupt_age = 0
-    end
-
-    def bankrupt_age
-      @bankrupt_age
     end
 
     def bankrupt
       @bankrupt
     end
 
-    def write_out_header(clopt, seed)
-      puts "Scenario #{seed+1}"
+    def bankrupt_age
+      @bankrupt_age
+    end
+
+    def write_header_out(clopt, sim)
+      puts "Simulation #{sim+1}"
       if clopt.taxed_savings and clopt.verbose
         format = "%-4s%13s%22s%22s%22s%22s%22s%13s%14s\n" 
         printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Net Worth") 
@@ -72,7 +75,7 @@ module Lifecastor
     end
 
     def run
-      write_out_header(@clopt, @seed) if @clopt.brief or @clopt.verbose
+      write_header_out(@clopt, @sim) if @clopt.brief or @clopt.verbose
       (@p_prop.life_expectancy.to_i-@age+1).times { |y|
         # before taxing savings for shortfalls: basic calculation
         income         = @income.of_year(y)
@@ -410,8 +413,9 @@ module Lifecastor
 
 
   class Chart
-    def form_html_and_chart_it(title, header, chart1, res_array) # array containing column names
+    def form_html_and_chart_it(title, chart1, res_array) # array containing column names
   
+      header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Net Worth"]
       data_to_chart = form_chart_data(header, chart1, res_array)
     
       fn = title.gsub(/ /, '_') # just for IE: it could not handle spaces in file names
@@ -603,8 +607,8 @@ module Lifecastor
   
   
   # TODO need to use a simple array then methods to make it into a 3-d array
-  def Lifecastor.average_scenario(res_set) # seed x year x col
-    seeds = res_set.length
+  def Lifecastor.average_simulation(res_set) # sim x year x col
+    sims = res_set.length
     years = res_set[0].length
     cols  = res_set[0][0].length
   
@@ -621,7 +625,7 @@ module Lifecastor
   
     years.times {|y| 
       cols.times {|c| 
-        avg_res[y][c] /= seeds 
+        avg_res[y][c] /= sims 
         avg_res[y][c] = avg_res[y][c].to_i if c == 0 # keep age column integer
       } 
     }
@@ -631,45 +635,52 @@ module Lifecastor
   def Lifecastor.run  
     clopt = Optparser.parse(ARGV)
     # planning properties file parsing
+    #
+    # when connected to rails, it should be populated by user's plan out of db
+    #
     ppf = "plan.properties"
     ppf = ARGV[0] if ARGV.length > 0
     p_prop = Utils::Properties.load_from_file(ppf, true)
     
+    # TODO really don't need these, plan stores its run result inside
     # run many times to get an average view of the overall financial forecast
-    # result array indexed by seeds, each is a hash keyed by 'income, expense, ...' and valued by its time series array
+    # result array indexed by sims, each is a hash keyed by 'income, expense, ...' and valued by its time series array
     result_set_in_hash = [] 
-    result_set_in_array = [] # result array indexed by seeds, each is 2-d of income, tax, expense, ... by age
+    result_set_in_array = [] # result array indexed by sims, each is 2-d of income, tax, expense, ... by age
     count = 0
     bankrupt_total_age = 0
-    p_prop.total_number_of_scenario_runs.to_i.times { |seed|
-      srand(seed+p_prop.seed_offset.to_i) # make the randam repeatable; without it, the random will not repeat
+    p_prop.total_number_of_simulation_runs.to_i.times { |sim|
+      # this alone makes a new simulation run
+      srand(sim + p_prop.seed_offset.to_i) # make the randam repeatable; without it, the random will not repeat
     
       result_set_in_hash << result_hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
       result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
     
-      plan = Lifecastor::Plan.new(seed, result_array, result_hash, p_prop, clopt)
+      # TODO p-prop and clopt are constants, they don't need to be passed in for every run
+      plan = Lifecastor::Plan.new(sim, result_array, result_hash, p_prop, clopt)
       plan.run
       count += plan.bankrupt
       bankrupt_total_age += plan.bankrupt_age
     }
     
-    # end summary results
-    printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_scenario_runs.to_f, "%")
-    printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
-    a_scen = Lifecastor.average_scenario(result_set_in_array)
-    printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+    # summary results
+    a_scen = Lifecastor.average_simulation(result_set_in_array)
+    if !clopt.quiet
+      printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
+      printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
+      printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+    end
     
     # charting
     if clopt.chart
-      header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Net Worth"]
       # initialize charts; it's empty if properties said so
       chart1 = p_prop.what_to_chart1.empty? ? '' : p_prop.what_to_chart1.split(',')
       chart2 = p_prop.what_to_chart2.empty? ? '' : p_prop.what_to_chart2.split(',')
       
       c = Chart.new
-      c.form_html_and_chart_it('All but Net Worth', header, chart1, a_scen)
+      c.form_html_and_chart_it('All but Net Worth', chart1, a_scen)
       sleep 1
-      c.form_html_and_chart_it('Net Worth', header, chart2, a_scen)
+      c.form_html_and_chart_it('Net Worth', chart2, a_scen)
     end
   end
 end
