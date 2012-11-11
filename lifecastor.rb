@@ -15,6 +15,12 @@ module Utl
     u = m + 2.0*sd
     v > u ? u : v
   end
+  def zero?(v)
+    v.abs < 0.0000001 ? true : false
+  end
+  def normal_rand_number(m, sd)
+      zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng
+  end
 end
 
 
@@ -82,7 +88,8 @@ module Lifecastor
         deduction      = @tax.std_deduction
         taxable_income = income > deduction ? income - deduction : 0
         current_age    = y + @age
-        expense        = @expense.normal_cost(y, y >= @years_to_work)
+        # just need to add any periodic expense in here
+        expense        = @expense.normal_cost(y, y >= @years_to_work) + @expense.periodic_expense(y)
         st             = @tax.state_tax(income)
         ft             = @tax.federal_tax(income)
         leftover       = income - st - ft - expense
@@ -207,8 +214,7 @@ module Lifecastor
     end
   
     def balance
-      #rate = Rubystats::NormalDistribution.new(@rate_m, @rate_sd).rng
-      rate = u_bounded(Rubystats::NormalDistribution.new(@rate_m, @rate_sd).rng, @rate_m, @rate_sd)
+      rate = u_bounded(normal_rand_number(@rate_m, @rate_sd), @rate_m, @rate_sd)
       @bal*(1.0 + rate)
     end
   
@@ -240,9 +246,8 @@ module Lifecastor
            when 70..INFINITY then 34092
            else raise "Unknown age to retire: #{age_to_retire}"
            end
-      #inc = Rubystats::NormalDistribution.new(@inc_m, @inc_sd).rng
-      inc = u_bounded(Rubystats::NormalDistribution.new(@inc_m, @inc_sd).rng, @inc_m, @inc_sd)
-      @base = @base*(1.0 + inc)
+      inc = u_bounded(normal_rand_number(@inc_m, @inc_sd), @inc_m, @inc_sd)
+      @base = @base*(1.0 + inc) if n > 0 # no inc for the first plan year
       n < @years_to_work ? @base : ss
     end
   end
@@ -256,20 +261,22 @@ module Lifecastor
       @inf_sd = p_prop.inflation_sd.to_f
       @first_two = p_prop.first_two_year_factor.to_f
       @expense_after = p_prop.expense_after_retirement.to_f
+      @monthly_expense = p_prop.monthly_expense.to_f
+      @start_year = p_prop.start_year.to_i
+      @end_year = p_prop.end_year.to_i
     end
   
     def cost(n) # need to inflation adjust here
-      inf = Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng
+      inf = normal_rand_number(@inf_m, @inf_sd)
       lo = (@mean-2*@sd)*(1.0 + inf)**n
       up = (@mean+2*@sd)*(1.0 + inf)**n
       rand(lo..up)
     end
   
     def normal_cost(year, retired) 
-      #inf = Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng
-      inf = l_bounded(Rubystats::NormalDistribution.new(@inf_m, @inf_sd).rng, @inf_m, @inf_sd)
+      inf = l_bounded(normal_rand_number(@inf_m, @inf_sd), @inf_m, @inf_sd)
       @mean = @mean*(1.0 + inf) # inflation adjust here
-      if year < 2
+      if year < 2 # first two year factor
         mean = @first_two*@mean
         sd   = @first_two*@sd
 #     elsif dead
@@ -280,7 +287,14 @@ module Lifecastor
         mean = retired ? @expense_after*@mean : @mean # adjust down to 80% after retirement
         sd   = retired ? @expense_after*@sd : @sd
       end
-      l_bounded(Rubystats::NormalDistribution.new(mean, sd).rng, mean, sd)
+      l_bounded(normal_rand_number(mean, sd), mean, sd)
+    end
+  
+    def periodic_expense(year) 
+      rv = 0.0
+      y = Time.new.year + year
+      rv = 12.0 * @monthly_expense if @start_year < y && y <= @end_year
+      rv
     end
   end
   
@@ -535,31 +549,35 @@ module Lifecastor
     CODES = %w[iso-2022-jp shift_jis euc-jp utf8 binary]
     CODE_ALIASES = { "jis" => "iso-2022-jp", "sjis" => "shift_jis" }
   
-    #
     # Return a structure describing the options.
-    #
     def self.parse(args)
-      # The options specified on the command line will be collected in *options*.
-      # We set default values here.
+      # The options specified on the command line will be collected in *options*. We set default values here.
       options = OpenStruct.new
-      options.brief = false
-      options.chart = false
+      options.brief         = false
+      options.chart         = false
       options.taxed_savings = false
-      options.verbose = false
+      options.verbose       = false
   
       opts = OptionParser.new do |opts|
-        opts.banner = "Usage: ruby #{__FILE__} [options]"
+        opts.banner = "
+Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
+    Options are explained below.\n
+    To make a simplest run, type:
+        run_lifecastor.exe
+    Then, hit enter key.\n
+    To run on your own planning property file named 'my_planning_properties' with option -v, type:
+        run_lifecastor.exe -v my_planning_properties
+    Then, hit enter key."
   
-        opts.separator ""
+        opts.separator "" # nice formatter for the usage and help show
         opts.separator "Specific options:"
   
         # Boolean switch.
-        # only gives bankrupt brief info
         opts.on( '-b', '--brief', 'Output brief resutls of bankrupt info. Use -v to see more detaills.' ) do |b|
           options.brief = b
         end
   
-        opts.on( '-c', '--chart', 'Chart the resutls as configured by your planning.propreties file.' ) do |c|
+        opts.on( '-c', '--chart', 'Chart the resutls as configured by your plan.propreties file.' ) do |c|
           options.chart = c
         end
   
@@ -568,7 +586,6 @@ module Lifecastor
           options.taxed_savings = t
         end
       
-        # gives columns of output
         opts.on( '-v', '--verbose', 'Output the complete resutls.' ) do |v|
           options.verbose = v
         end
@@ -581,8 +598,6 @@ module Lifecastor
         opts.separator ""
         opts.separator "Common options:"
   
-        # No argument, shows at tail.  This will print an options summary.
-        # Try it and see!
         opts.on_tail("-h", "--help", "Show this message") do
           puts opts
           exit
@@ -634,7 +649,7 @@ module Lifecastor
   
   def Lifecastor.run  
     clopt = Optparser.parse(ARGV)
-    # planning properties file parsing
+    # plan properties file parsing
     #
     # when connected to rails, it should be populated by user's plan out of db
     #
