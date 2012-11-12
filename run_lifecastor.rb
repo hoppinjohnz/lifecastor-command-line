@@ -1,2 +1,0 @@
-require './lifecastor'
-Lifecastor.run

@@ -563,10 +563,10 @@ module Lifecastor
 Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
     Options are explained below.\n
     To make a simplest run, type:
-        run_lifecastor.exe
+        lifecastor.exe
     Then, hit enter key.\n
     To run on your own planning property file named 'my_planning_properties' with option -v, type:
-        run_lifecastor.exe -v my_planning_properties
+        lifecastor.exe -v my_planning_properties
     Then, hit enter key."
   
         opts.separator "" # nice formatter for the usage and help show
@@ -700,3 +700,7 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
   end
 end
 
+##############################################
+# to make Windows runable uncomment this line
+##############################################
+Lifecastor.run

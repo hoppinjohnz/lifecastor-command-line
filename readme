@@ -1,0 +1,7 @@
+2012/11/11 sun
+rm run_lifecastor.rb: use lifecastor for both rails and windows: need to comment or uncomment the last line
+
+ocra doesn't work well for lifecastor.rb: it can not deal with "require 'lifecastor'" statement
+
+need to run this way ow Windows will err: 'lifecastor.exe has stopped working':
+ocra --add-all-core lifecastor.rb
