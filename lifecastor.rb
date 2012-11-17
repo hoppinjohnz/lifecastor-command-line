@@ -37,10 +37,9 @@ module Lifecastor
   INFINITY = 99999999999999999
 
   class Plan
-    def initialize(sim, result_array, result_hash, p_prop, clopt)
+    def initialize(sim, result_array, p_prop, clopt)
       @sim = sim # only needed for output simulation numbers
       @result_array = result_array # year by income, tax, expense, ...
-      @result_hash = result_hash
       @p_prop = p_prop
       @clopt = clopt
 
@@ -173,26 +172,6 @@ module Lifecastor
       end
   
       def save_yearly_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
-        if year == 0
-          @result_hash['age'] = Array.new << age
-          @result_hash['income'] = Array.new << income.to_i
-          @result_hash['taxable_income'] = Array.new << taxable_income.to_i
-          @result_hash['federal_tax'] = Array.new << federal_tax.to_i
-          @result_hash['state_tax'] = Array.new << state_tax.to_i
-          @result_hash['expense'] = Array.new << expense.to_i
-          @result_hash['leftover'] = Array.new << leftover.to_i
-          @result_hash['net'] = Array.new << net.to_i
-        else
-          @result_hash['age'] << age
-          @result_hash['income'] << income.to_i
-          @result_hash['taxable_income'] << taxable_income.to_i
-          @result_hash['federal_tax'] << federal_tax.to_i
-          @result_hash['state_tax'] << state_tax.to_i
-          @result_hash['expense'] << expense.to_i
-          @result_hash['leftover'] << leftover.to_i
-          @result_hash['net'] << net.to_i
-        end
-  
         @result_array[year] = Array.new
         @result_array[year] << age
         @result_array[year] << income.to_i
@@ -649,7 +628,7 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
   
   def Lifecastor.run  
     clopt = Optparser.parse(ARGV)
-    # plan properties file parsing
+
     #
     # when connected to rails, it should be populated by user's plan out of db
     #
@@ -660,7 +639,6 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
     # TODO really don't need these, plan stores its run result inside
     # run many times to get an average view of the overall financial forecast
     # result array indexed by sims, each is a hash keyed by 'income, expense, ...' and valued by its time series array
-    result_set_in_hash = [] 
     result_set_in_array = [] # result array indexed by sims, each is 2-d of income, tax, expense, ... by age
     count = 0
     bankrupt_total_age = 0
@@ -668,11 +646,10 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
       # this alone makes a new simulation run
       srand(sim + p_prop.seed_offset.to_i) # make the randam repeatable; without it, the random will not repeat
     
-      result_set_in_hash << result_hash = Hash.new # stores the planning result hashed on income, tax, expense, ...
       result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
     
       # TODO p-prop and clopt are constants, they don't need to be passed in for every run
-      plan = Lifecastor::Plan.new(sim, result_array, result_hash, p_prop, clopt)
+      plan = Lifecastor::Plan.new(sim, result_array, p_prop, clopt)
       plan.run
       count += plan.bankrupt
       bankrupt_total_age += plan.bankrupt_age
