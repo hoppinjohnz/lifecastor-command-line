@@ -21,6 +21,9 @@ module Utl
   def normal_rand_number(m, sd)
       zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng
   end
+  def years_to_work(age, age_to_retire)
+    age_to_retire > age ? age_to_retire - age : 0
+  end
 end
 
 
@@ -37,24 +40,24 @@ module Lifecastor
   INFINITY = 99999999999999999
 
   class Plan
+    include Utl
     def initialize(sim, result_array, p_prop, clopt)
-      @sim = sim # only needed for output simulation numbers
+      @sim          = sim # only needed for output simulation numbers
       @result_array = result_array # year by income, tax, expense, ...
-      @p_prop = p_prop
-      @clopt = clopt
+      @p_prop       = p_prop
+      @clopt        = clopt
 
-      @age = p_prop.age.to_i
+      @age           = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
-      @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
 
       # TOTO liabilities, children, ...
-      @income = Income.new(p_prop)
+      @income  = Income.new(p_prop)
       @expense = Expense.new(p_prop)
-      @tax = Tax.new(p_prop)
+      @tax     = Tax.new(p_prop)
       @savings = Savings.new(p_prop)
 
       # TODO will have more data points to collect
-      @bankrupt = 0 # binary 0 or 1; used for counting total bankrupts
+      @bankrupt     = 0 # binary 0 or 1; used for counting total bankrupts
       @bankrupt_age = 0
     end
 
@@ -88,7 +91,7 @@ module Lifecastor
         taxable_income = income > deduction ? income - deduction : 0
         current_age    = y + @age
         # just need to add any periodic expense in here
-        expense        = @expense.normal_cost(y, y >= @years_to_work) + @expense.periodic_expense(y)
+        expense        = @expense.normal_cost(y, y >= years_to_work(@age, @age_to_retire)) + @expense.periodic_expense(y)
         st             = @tax.state_tax(income)
         ft             = @tax.federal_tax(income)
         leftover       = income - st - ft - expense
@@ -210,7 +213,6 @@ module Lifecastor
       @age_to_retire = p_prop.age_to_retire.to_i
       @inc_m = p_prop.increase_mean.to_f
       @inc_sd = p_prop.increase_sd.to_f
-      @years_to_work = @age_to_retire > @age ? @age_to_retire - @age : 0
     end
   
     def of_year(n)
@@ -227,7 +229,7 @@ module Lifecastor
            end
       inc = u_bounded(normal_rand_number(@inc_m, @inc_sd), @inc_m, @inc_sd)
       @base = @base*(1.0 + inc) if n > 0 # no inc for the first plan year
-      n < @years_to_work ? @base : ss
+      n < years_to_work(@age, @age_to_retire) ? @base : ss
     end
   end
   
