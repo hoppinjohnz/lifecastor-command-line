@@ -52,7 +52,7 @@ module Lifecastor
       @age_           = p_prop.age_.to_i
       @age_to_retire_ = p_prop.age_to_retire_.to_i
 
-      # TOTO liabilities, children, ...
+      # TODO liabilities, children, ...
       @income  = Income.new(p_prop)
       @expense = Expense.new(p_prop)
       @tax     = Tax.new(p_prop)
@@ -87,16 +87,12 @@ module Lifecastor
     def run
       write_header_out(@clopt, @sim) if @clopt.brief or @clopt.verbose
       (@p_prop.life_expectancy_.to_i-@age+1).times { |y|
-        # before taxing savings for shortfalls: basic calculation
-        # TODO should just be income = @income.total
-        income         = @income.of_year(y)
+        income         = @income.total(y)
         deduction      = @tax.std_deduction
         taxable_income = income > deduction ? income - deduction : 0
         current_age    = y + @age
         current_age_    = y + @age_
-        # just need to add any periodic expense in here
-        # TODO should just be expense = @expense.total
-        expense        = @expense.normal_cost(y, y >= number_of_years_from(@age, @age_to_retire)) + @expense.periodic_expense(y)
+        expense        = @expense.total(y)
         st             = @tax.state_tax(income)
         ft             = @tax.federal_tax(income)
         leftover       = income - st - ft - expense
@@ -238,7 +234,7 @@ module Lifecastor
       end
     end
   
-    def of_year(n)
+    def total(n)
       # spousal benefit is lower if spouse income = 0: 
       # http://www.foxbusiness.com/personal-finance/2012/07/16/smart-social-security-strategies-for-couples/
       # before retirement normal income, after retirement ss
@@ -295,8 +291,11 @@ module Lifecastor
       rand(lo..up)
     end
   
-#        expense        = @expense.normal_cost(y, y >= number_of_years_from(@age, @age_to_retire)) + @expense.periodic_expense(y)
-    def normal_cost(year, retired) 
+    def total(y)
+      normal_cost(y) + periodic_expense(y) 
+    end
+
+    def normal_cost(year) 
       retired = year >= number_of_years_from(@age, @age_to_retire)
       dead = year >= number_of_years_from(@age, @life_expectancy)
       inf = l_bounded(normal_rand_number(@inf_m, @inf_sd), @inf_m, @inf_sd)
