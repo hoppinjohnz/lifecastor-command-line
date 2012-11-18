@@ -1,5 +1,20 @@
 #!/bin/bash
-ruby lifecastor.rb -v test/plan.properties > test/zz.f
-diff test/archive.f test/zz.f
-ruby lifecastor.rb -tv test/plan.properties > test/zz.t
-diff test/archive.t test/zz.t
+# optionally take a plan.properties file as the cmd line argument; quit if it errs to avoid the long display of diff cmd output
+
+# default pf test/plan.properties
+if [ $# -lt 1 ] ; then
+  pf=test/plan.properties
+else
+  pf=$1
+fi
+
+ef=error.log
+ruby lifecastor.rb -v $pf > test/zz.f 2> $ef
+if [[ -s $ef ]]; then
+  cat $ef
+  exit
+else
+  diff test/archive.f test/zz.f
+  ruby lifecastor.rb -tv $pf > test/zz.t
+  diff test/archive.t test/zz.t
+fi;

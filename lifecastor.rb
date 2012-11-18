@@ -21,8 +21,8 @@ module Utl
   def normal_rand_number(m, sd)
       zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng
   end
-  def years_to_work(age, age_to_retire)
-    age_to_retire > age ? age_to_retire - age : 0
+  def number_of_years_from(age, age_to_retire)
+    age < age_to_retire ? age_to_retire - age : 0
   end
 end
 
@@ -49,6 +49,8 @@ module Lifecastor
 
       @age           = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
+      @age_           = p_prop.age_.to_i
+      @age_to_retire_ = p_prop.age_to_retire_.to_i
 
       # TOTO liabilities, children, ...
       @income  = Income.new(p_prop)
@@ -84,14 +86,17 @@ module Lifecastor
 
     def run
       write_header_out(@clopt, @sim) if @clopt.brief or @clopt.verbose
-      (@p_prop.life_expectancy.to_i-@age+1).times { |y|
+      (@p_prop.life_expectancy_.to_i-@age+1).times { |y|
         # before taxing savings for shortfalls: basic calculation
+        # TODO should just be income = @income.total
         income         = @income.of_year(y)
         deduction      = @tax.std_deduction
         taxable_income = income > deduction ? income - deduction : 0
         current_age    = y + @age
+        current_age_    = y + @age_
         # just need to add any periodic expense in here
-        expense        = @expense.normal_cost(y, y >= years_to_work(@age, @age_to_retire)) + @expense.periodic_expense(y)
+        # TODO should just be expense = @expense.total
+        expense        = @expense.normal_cost(y, y >= number_of_years_from(@age, @age_to_retire)) + @expense.periodic_expense(y)
         st             = @tax.state_tax(income)
         ft             = @tax.federal_tax(income)
         leftover       = income - st - ft - expense
@@ -107,7 +112,7 @@ module Lifecastor
             net = @savings.balance - cashed_savings # decrease savings
           end
           @savings.update(net) # update family savings
-          adjusted_write_out(current_age, income, income+cashed_savings, taxable_income, adj_income-deduction, 
+          adjusted_write_out(current_age, current_age_, income, income+cashed_savings, taxable_income, adj_income-deduction, 
                              ft, federal_tax, st, state_tax, expense, leftover, net) if @clopt.verbose
   
           # re-assign back so that the save result routine can still work
@@ -116,7 +121,7 @@ module Lifecastor
         else # no tax on savings is simpler to understand, this is the default
           net = @savings.balance + leftover
           @savings.update(net) # update family savings
-          write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.verbose
+          write_out(current_age, current_age_, income, taxable_income, ft, st, expense, leftover, net) if @clopt.verbose
         end
 
         save_yearly_result(current_age, y, income, taxable_income, ft, st, expense, leftover, net)
@@ -125,7 +130,7 @@ module Lifecastor
           if @bankrupt == 0 # only print out bankrupt once
             @bankrupt = 1
             @bankrupt_age = current_age                                         # not to be called for -bv, only called for -b
-            write_out(current_age, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose 
+            write_out(current_age, current_age_, income, taxable_income, ft, st, expense, leftover, net) if @clopt.brief and !@clopt.verbose 
             puts "      BANKRUPT at age #{current_age}!" if @clopt.brief or @clopt.verbose
           end
         end
@@ -162,15 +167,17 @@ module Lifecastor
         end
       end
   
-      def write_out(age, income, t_income, ft, st, expense, leftover, net)
+      def write_out(age, age_, income, t_income, ft, st, expense, leftover, net)
         format = "%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n"
         format = "R"+format if age >= @age_to_retire
+        format = "R"+format if age_ >= @age_to_retire_
         printf(format, age, income, t_income, ft, st, ft+st, expense, leftover, net)
       end
   
-      def adjusted_write_out(age, income, a_income, t_income, a_t_income, ft, aft, st, ast, expense, leftover, net)
+      def adjusted_write_out(age, age_, income, a_income, t_income, a_t_income, ft, aft, st, ast, expense, leftover, net)
         format = "%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f/%-10.0f%11.0f%13.0f%14.0f\n"
         format = "R"+format if age >= @age_to_retire
+        format = "R"+format if age_ >= @age_to_retire_
         printf(format, age, income, a_income, t_income, a_t_income, ft, aft, st, ast, ft+st, aft+ast, expense, leftover, net)
       end
   
@@ -208,28 +215,58 @@ module Lifecastor
   class Income
     include Utl
     def initialize(p_prop)
-      @base = p_prop.income.to_i
-      @age = p_prop.age.to_i
+      @age           = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
-      @inc_m = p_prop.increase_mean.to_f
-      @inc_sd = p_prop.increase_sd.to_f
+      @inc_m         = p_prop.increase_mean.to_f
+      @inc_sd        = p_prop.increase_sd.to_f
+      @base          = p_prop.income.to_i
+
+      @age_           = p_prop.age_.to_i
+      @age_to_retire_ = p_prop.age_to_retire_.to_i
+      @inc_m_         = p_prop.increase_mean_.to_f
+      @inc_sd_        = p_prop.increase_sd_.to_f
+      @base_          = p_prop.income_.to_i
+
+      @spousal_ss_benefit_factor = p_prop.spousal_ss_benefit_factor.to_f
+
+      # make sure spousal ss benefit factor and income are mutually exlucsive
+      if @base_ == 0.0
+        if @spousal_ss_benefit_factor == 0.0
+#          puts "\nWarning: Spousal SS benefit factor = 0. Give it a value greater than 0 in the plan properties file.\n" 
+        end
+        @inc_m_ = @inc_sd_ = 0.0
+      end
     end
   
     def of_year(n)
+      # spousal benefit is lower if spouse income = 0: 
+      # http://www.foxbusiness.com/personal-finance/2012/07/16/smart-social-security-strategies-for-couples/
       # before retirement normal income, after retirement ss
       # 62   17016
       # 66.5 24984
       # 70   34092
-      ss = case @age_to_retire
-           when 0..61 then 0
-           when 62..66 then 17016
-           when 67..69 then 24984
-           when 70..INFINITY then 34092
-           else raise "Unknown age to retire: #{age_to_retire}"
-           end
+      ss = ss(@age_to_retire)
       inc = u_bounded(normal_rand_number(@inc_m, @inc_sd), @inc_m, @inc_sd)
       @base = @base*(1.0 + inc) if n > 0 # no inc for the first plan year
-      n < years_to_work(@age, @age_to_retire) ? @base : ss
+      income = n < number_of_years_from(@age, @age_to_retire) ? @base : ss
+
+      ss_ = ss(@age_to_retire_)
+      ss_ = @spousal_ss_benefit_factor * ss if @base_ == 0.0 # homemaker spouse claims spousal ss benefit
+      inc_ = u_bounded(normal_rand_number(@inc_m_, @inc_sd_), @inc_m_, @inc_sd_)
+      @base_ = @base_*(1.0 + inc_) if n > 0 # no inc for the first plan year
+      income_ = n < number_of_years_from(@age_, @age_to_retire_) ? @base_ : ss_
+
+      income + income_
+    end
+
+    def ss(age_to_retire)
+      case age_to_retire
+      when 0..61 then 0
+      when 62..66 then 17016
+      when 67..69 then 24984
+      when 70..INFINITY then 34092
+      else raise "Unknown age to retire: #{age_to_retire}"
+      end
     end
   end
   
@@ -245,6 +282,10 @@ module Lifecastor
       @monthly_expense = p_prop.monthly_expense.to_f
       @start_year = p_prop.start_year.to_i
       @end_year = p_prop.end_year.to_i
+      @age           = p_prop.age.to_i
+      @age_to_retire = p_prop.age_to_retire.to_i
+      @life_expectancy = p_prop.life_expectancy_.to_i
+      @expense_after_life_expectancy = p_prop.expense_after_life_expectancy.to_f
     end
   
     def cost(n) # need to inflation adjust here
@@ -254,16 +295,19 @@ module Lifecastor
       rand(lo..up)
     end
   
+#        expense        = @expense.normal_cost(y, y >= number_of_years_from(@age, @age_to_retire)) + @expense.periodic_expense(y)
     def normal_cost(year, retired) 
+      retired = year >= number_of_years_from(@age, @age_to_retire)
+      dead = year >= number_of_years_from(@age, @life_expectancy)
       inf = l_bounded(normal_rand_number(@inf_m, @inf_sd), @inf_m, @inf_sd)
       @mean = @mean*(1.0 + inf) # inflation adjust here
       if year < 2 # first two year factor
         mean = @first_two*@mean
         sd   = @first_two*@sd
-#     elsif dead
-#       # the year dead, 50% of cost reduced: note this is different from loss of life, planning goes on
-#       mean = 0.5 * (retired ? p.expense_after_retirement.to_f*@mean : @mean)
-#       sd   = 0.5 * (retired ? p.expense_after_retirement.to_f*@sd : @sd)
+      elsif dead
+        # the year the primary is dead, 50% of cost reduced
+        mean = @expense_after_life_expectancy * (retired ? @expense_after*@mean : @mean)
+        sd   = @expense_after_life_expectancy * (retired ? @expense_after*@sd : @sd)
       else
         mean = retired ? @expense_after*@mean : @mean # adjust down to 80% after retirement
         sd   = retired ? @expense_after*@sd : @sd
@@ -662,7 +706,7 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
     if !clopt.quiet
       printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
       printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
-      printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
+      printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy_.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
     end
     
     # charting
