@@ -226,8 +226,8 @@ module Lifecastor
       @spousal_ss_benefit_factor = p_prop.spousal_ss_benefit_factor.to_f
 
       # make sure spousal ss benefit factor and income are mutually exlucsive
-      if @base_ == 0.0
-        if @spousal_ss_benefit_factor == 0.0
+      if zero? @base_
+        if zero? @spousal_ss_benefit_factor
 #          puts "\nWarning: Spousal SS benefit factor = 0. Give it a value greater than 0 in the plan properties file.\n" 
         end
         @inc_m_ = @inc_sd_ = 0.0
@@ -247,7 +247,7 @@ module Lifecastor
       income = n < number_of_years_from(@age, @age_to_retire) ? @base : ss
 
       ss_ = ss(@age_to_retire_)
-      ss_ = @spousal_ss_benefit_factor * ss if @base_ == 0.0 # homemaker spouse claims spousal ss benefit
+      ss_ = @spousal_ss_benefit_factor * ss if zero? @base_ # homemaker spouse claims spousal ss benefit
       inc_ = u_bounded(normal_rand_number(@inc_m_, @inc_sd_), @inc_m_, @inc_sd_)
       @base_ = @base_*(1.0 + inc_) if n > 0 # no inc for the first plan year
       income_ = n < number_of_years_from(@age_, @age_to_retire_) ? @base_ : ss_
