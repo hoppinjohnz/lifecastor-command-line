@@ -11,7 +11,8 @@ module Utl
   def u_bounded(v, m, sd);                      u = m + 2.0*sd; v > u ? u : v;                                end
   def zero?(v);                                 v.abs < 0.0000001 ? true : false;                             end
   def normal_rand_number(m, sd);                zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng; end
-  def number_of_years_from(age, age_to_retire); age < age_to_retire ? age_to_retire - age : 0;                end
+  def years_to_retire(age, age_to_retire);      age < age_to_retire ? age_to_retire - age : 0;                end
+  def years_to_live(age, life_expectancy);      age < life_expectancy ? life_expectancy - age : 0;            end
 end
 
 
@@ -154,14 +155,14 @@ module Lifecastor
       def write_out(age, age_, income, t_income, ft, st, expense, leftover, net)
         format = "%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n"
         format = "R"+format if age >= @age_to_retire
-        format = "R"+format if age_ >= @age_to_retire_
+        format = "r"+format if age_ >= @age_to_retire_
         printf(format, age, income, t_income, ft, st, ft+st, expense, leftover, net)
       end
   
       def adjusted_write_out(age, age_, income, a_income, t_income, a_t_income, ft, aft, st, ast, expense, leftover, net)
         format = "%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f/%-10.0f%11.0f%13.0f%14.0f\n"
         format = "R"+format if age >= @age_to_retire
-        format = "R"+format if age_ >= @age_to_retire_
+        format = "r"+format if age_ >= @age_to_retire_
         printf(format, age, income, a_income, t_income, a_t_income, ft, aft, st, ast, ft+st, aft+ast, expense, leftover, net)
       end
   
@@ -212,6 +213,7 @@ module Lifecastor
       @base_          = p_prop.income_.to_i
 
       @spousal_ss_benefit_factor = p_prop.spousal_ss_benefit_factor.to_f
+      @years_to_retire = years_to_retire(@age, @age_to_retire)
 
       # make sure spousal ss benefit factor and income are mutually exlucsive
       if zero? @base_
@@ -232,13 +234,24 @@ module Lifecastor
       ss = ss(@age_to_retire)
       inc = u_bounded(normal_rand_number(@inc_m, @inc_sd), @inc_m, @inc_sd)
       @base = @base*(1.0 + inc) if n > 0 # no inc for the first plan year
-      income = n < number_of_years_from(@age, @age_to_retire) ? @base : ss
+      income = n < @years_to_retire ? @base : ss
+      retired = n >= @years_to_retire
 
       ss_ = ss(@age_to_retire_)
-      ss_ = @spousal_ss_benefit_factor * ss if zero? @base_ # homemaker spouse claims spousal ss benefit
       inc_ = u_bounded(normal_rand_number(@inc_m_, @inc_sd_), @inc_m_, @inc_sd_)
       @base_ = @base_*(1.0 + inc_) if n > 0 # no inc for the first plan year
-      income_ = n < number_of_years_from(@age_, @age_to_retire_) ? @base_ : ss_
+      income_ = n < @years_to_retire ? @base_ : ss_
+
+      # need to deal with homemaker spouse
+      if zero? @base_
+        if retired
+          income_ = @spousal_ss_benefit_factor * ss
+        else
+          income_ = 0.0
+        end
+      end
+      #hms = (zero?(@base_) && retired) ? @spousal_ss_benefit_factor * ss : income_
+      #ss_ = @spousal_ss_benefit_factor * ss if zero? @base_ # homemaker spouse claims spousal ss benefit
 
       income + income_
     end
@@ -268,8 +281,10 @@ module Lifecastor
       @end_year = p_prop.end_year.to_i
       @age           = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
-      @life_expectancy = p_prop.life_expectancy_.to_i
+      @life_expectancy = p_prop.life_expectancy.to_i
       @expense_after_life_expectancy = p_prop.expense_after_life_expectancy.to_f
+      @years_to_retire = years_to_retire(@age, @age_to_retire)
+      @years_to_live = years_to_live(@age, @life_expectancy)
     end
   
     def cost(n) # need to inflation adjust here
@@ -284,20 +299,24 @@ module Lifecastor
     end
 
     def normal_cost(year) 
-      retired = year >= number_of_years_from(@age, @age_to_retire)
-      dead = year >= number_of_years_from(@age, @life_expectancy)
+      retired = year >= @years_to_retire
+      dead = year >= @years_to_live
+
+      # inflation adjustment of cost
       inf = l_bounded(normal_rand_number(@inf_m, @inf_sd), @inf_m, @inf_sd)
-      @mean = @mean*(1.0 + inf) # inflation adjust here
+      @mean = @mean*(1.0 + inf) 
+
       if year < 2 # first two year factor
         mean = @first_two*@mean
         sd   = @first_two*@sd
-      elsif dead
-        # the year the primary is dead, 50% of cost reduced
-        mean = @expense_after_life_expectancy * (retired ? @expense_after*@mean : @mean)
-        sd   = @expense_after_life_expectancy * (retired ? @expense_after*@sd : @sd)
       else
-        mean = retired ? @expense_after*@mean : @mean # adjust down to 80% after retirement
-        sd   = retired ? @expense_after*@sd : @sd
+        # adjust down to 80% if retired
+        mean = (retired ? @expense_after*@mean : @mean) 
+        sd   = (retired ? @expense_after*@sd   : @sd)
+
+        # adjust down again if dead
+        mean = (dead ? @expense_after_life_expectancy*mean : mean)
+        sd   = (dead ? @expense_after_life_expectancy*sd   : sd)
       end
       l_bounded(normal_rand_number(mean, sd), mean, sd)
     end
@@ -699,8 +718,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
     # summary results
     a_scen = Lifecastor.average_simulation(result_set_in_array)
     sr = sprintf("%s: %9.1f%s\n", "  Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
-    sr << (count == 0 ? sprintf("%s: %9.1f\n", "  No bankruptcy       ", p_prop.life_expectancy) : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
-    #sr << sprintf("%s: %9.1f\n", "Average bankrupt age", count == 0 ? p_prop.life_expectancy : bankrupt_total_age / count.to_f)
+    sr << (count == 0 ? sprintf("%s: %9.1f\n", "  No bankruptcy       ", p_prop.life_expectancy_) : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
     sr << sprintf("%s: %11s\n\n", "  Avg horizon wealth", a_scen[p_prop.life_expectancy_.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 1,234.23
 
     # get the current rlan properties into a string so that it can be saved to a file later
@@ -746,7 +764,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
           diff = true
         end
       end
-      diff ? ret : "Results didn't change.\n"
+      diff ? ret : "No change.\n"
     end
     def Lifecastor.copy(f1, f2)
       File.open(f2, 'w') do |w|  
