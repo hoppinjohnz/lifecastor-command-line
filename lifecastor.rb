@@ -211,9 +211,11 @@ module Lifecastor
       @inc_m_         = p_prop.increase_mean_.to_f
       @inc_sd_        = p_prop.increase_sd_.to_f
       @base_          = p_prop.income_.to_i
+      @life_expectancy = p_prop.life_expectancy.to_i
 
       @spousal_ss_benefit_factor = p_prop.spousal_ss_benefit_factor.to_f
       @years_to_retire = years_to_retire(@age, @age_to_retire)
+      @years_to_live = years_to_live(@age, @life_expectancy)
 
       # make sure spousal ss benefit factor and income are mutually exlucsive
       if zero? @base_
@@ -231,16 +233,20 @@ module Lifecastor
       # 62   17016
       # 66.5 24984
       # 70   34092
+      retired = n >= @years_to_retire
+      dead = n >= @years_to_live
+
       ss = ss(@age_to_retire)
       inc = u_bounded(normal_rand_number(@inc_m, @inc_sd), @inc_m, @inc_sd)
       @base = @base*(1.0 + inc) if n > 0 # no inc for the first plan year
-      income = n < @years_to_retire ? @base : ss
-      retired = n >= @years_to_retire
+      income = retired ? ss : @base
+      income = dead ? 0.0 : income
 
       ss_ = ss(@age_to_retire_)
       inc_ = u_bounded(normal_rand_number(@inc_m_, @inc_sd_), @inc_m_, @inc_sd_)
       @base_ = @base_*(1.0 + inc_) if n > 0 # no inc for the first plan year
-      income_ = n < @years_to_retire ? @base_ : ss_
+      income_ = retired ? ss_ : @base_
+      income_ = dead ? 0.0 : income_
 
       # need to deal with homemaker spouse
       if zero? @base_
