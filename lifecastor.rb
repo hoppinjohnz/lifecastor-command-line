@@ -43,10 +43,11 @@ module Lifecastor
       @p_prop       = p_prop
       @clopt        = clopt
 
-      @age           = p_prop.age.to_i
-      @age_to_retire = p_prop.age_to_retire.to_i
-      @age_           = p_prop.age_.to_i
-      @age_to_retire_ = p_prop.age_to_retire_.to_i
+      @age             = p_prop.age.to_i
+      @age_to_retire   = p_prop.age_to_retire.to_i
+      @life_expectancy = p_prop.life_expectancy.to_i
+      @age_            = p_prop.age_.to_i
+      @age_to_retire_  = p_prop.age_to_retire_.to_i
 
       # TODO liabilities, children, ...
       @income  = Income.new(p_prop)
@@ -159,18 +160,24 @@ module Lifecastor
         end
       end
   
+      def add_indicators(age, age_, format)
+        format = "r"+format if age_ >= @age_to_retire_
+        if age >= @life_expectancy
+          format = "L"+format
+        elsif age >= @age_to_retire
+          format = "R"+format
+        end
+        format # needed
+      end
+
       def write_out(age, age_, income, t_income, ft, st, expense, leftover, net)
         format = "%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n"
-        format = "R"+format if age >= @age_to_retire
-        format = "r"+format if age_ >= @age_to_retire_
-        printf(format, age, co(income), co(t_income), co(ft), co(st), co(ft+st), co(expense), co(leftover), co(net))
+        printf(add_indicators(age, age_, format), age, co(income), co(t_income), co(ft), co(st), co(ft+st), co(expense), co(leftover), co(net))
       end
   
       def adjusted_write_out(age, age_, income, a_income, t_income, a_t_income, ft, aft, st, ast, expense, leftover, net)
         format = "%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f/%-10.0f%11.0f%13.0f%14.0f\n"
-        format = "R"+format if age >= @age_to_retire
-        format = "r"+format if age_ >= @age_to_retire_
-        printf(format, age, co(income), co(a_income), co(t_income), co(a_t_income), co(ft), co(aft), co(st), co(ast), co(ft+st), co(aft+ast), co(expense), co(leftover), co(net))
+        printf(add_indicators(age, age_, format), age, co(income), co(a_income), co(t_income), co(a_t_income), co(ft), co(aft), co(st), co(ast), co(ft+st), co(aft+ast), co(expense), co(leftover), co(net))
       end
   
       def save_yearly_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
