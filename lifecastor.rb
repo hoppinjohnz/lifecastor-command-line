@@ -13,6 +13,13 @@ module Utl
   def normal_rand_number(m, sd);                zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng; end
   def years_to_retire(age, age_to_retire);      age < age_to_retire ? age_to_retire - age : 0;                end
   def years_to_live(age, life_expectancy);      age < life_expectancy ? life_expectancy - age : 0;            end
+  def co(amount)
+    if amount.zero?
+      0.0
+    else
+      amount
+    end
+  end
 end
 
 
@@ -24,9 +31,9 @@ end
 # TODO retirement, death, estate planning, catastrophical events/life insurance, random income, random inflation, will, estate stats 
 
 module Lifecastor
-
   # global constants
   INFINITY = 99999999999999999
+  MINEARNFORSS = 1130 # not used
 
   class Plan
     include Utl
@@ -156,14 +163,14 @@ module Lifecastor
         format = "%3d %13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f%13.0f\n"
         format = "R"+format if age >= @age_to_retire
         format = "r"+format if age_ >= @age_to_retire_
-        printf(format, age, income, t_income, ft, st, ft+st, expense, leftover, net)
+        printf(format, age, co(income), co(t_income), co(ft), co(st), co(ft+st), co(expense), co(leftover), co(net))
       end
   
       def adjusted_write_out(age, age_, income, a_income, t_income, a_t_income, ft, aft, st, ast, expense, leftover, net)
         format = "%3d %13.0f/%-10.0f%11.0f/%-10.0f%11.0f/%-10.f%11.0f/%-10.f%11.0f/%-10.0f%11.0f%13.0f%14.0f\n"
         format = "R"+format if age >= @age_to_retire
         format = "r"+format if age_ >= @age_to_retire_
-        printf(format, age, income, a_income, t_income, a_t_income, ft, aft, st, ast, ft+st, aft+ast, expense, leftover, net)
+        printf(format, age, co(income), co(a_income), co(t_income), co(a_t_income), co(ft), co(aft), co(st), co(ast), co(ft+st), co(aft+ast), co(expense), co(leftover), co(net))
       end
   
       def save_yearly_result(age, year, income, taxable_income, federal_tax, state_tax, expense, leftover, net)
@@ -215,6 +222,7 @@ module Lifecastor
 
       @spousal_ss_benefit_factor = p_prop.spousal_ss_benefit_factor.to_f
       @years_to_retire = years_to_retire(@age, @age_to_retire)
+      @years_to_retire_ = years_to_retire(@age_, @age_to_retire_)
       @years_to_live = years_to_live(@age, @life_expectancy)
 
       # make sure spousal ss benefit factor and income are mutually exlucsive
@@ -242,22 +250,13 @@ module Lifecastor
       income = retired ? ss : @base
       income = dead ? 0.0 : income
 
-      ss_ = ss(@age_to_retire_)
+      # spouse
+      retired_ = n >= @years_to_retire_
+      # this cal is not right: should based on earned credits
+      ss_ = @spousal_ss_benefit_factor * ss 
       inc_ = u_bounded(normal_rand_number(@inc_m_, @inc_sd_), @inc_m_, @inc_sd_)
       @base_ = @base_*(1.0 + inc_) if n > 0 # no inc for the first plan year
-      income_ = retired ? ss_ : @base_
-      income_ = dead ? 0.0 : income_
-
-      # need to deal with homemaker spouse
-      if zero? @base_
-        if retired
-          income_ = @spousal_ss_benefit_factor * ss
-        else
-          income_ = 0.0
-        end
-      end
-      #hms = (zero?(@base_) && retired) ? @spousal_ss_benefit_factor * ss : income_
-      #ss_ = @spousal_ss_benefit_factor * ss if zero? @base_ # homemaker spouse claims spousal ss benefit
+      income_ = retired_ ? ss_ : @base_
 
       income + income_
     end
