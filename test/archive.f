@@ -4380,3 +4380,4 @@ RR 80         17016         5616          442         1191         1634       10
 Bankrupt probability:      79.0%
 Average bankrupt age:      77.7
 Avg horizon wealth:    -162,373
+

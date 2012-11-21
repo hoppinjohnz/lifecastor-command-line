@@ -7,23 +7,11 @@ require 'launchy'
 
 
 module Utl
-  def l_bounded(v, m, sd)
-    l = m - 2.0*sd
-    v < l ? l : v
-  end
-  def u_bounded(v, m, sd)
-    u = m + 2.0*sd
-    v > u ? u : v
-  end
-  def zero?(v)
-    v.abs < 0.0000001 ? true : false
-  end
-  def normal_rand_number(m, sd)
-      zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng
-  end
-  def number_of_years_from(age, age_to_retire)
-    age < age_to_retire ? age_to_retire - age : 0
-  end
+  def l_bounded(v, m, sd);                      l = m - 2.0*sd; v < l ? l : v;                                end
+  def u_bounded(v, m, sd);                      u = m + 2.0*sd; v > u ? u : v;                                end
+  def zero?(v);                                 v.abs < 0.0000001 ? true : false;                             end
+  def normal_rand_number(m, sd);                zero?(sd) ? m : Rubystats::NormalDistribution.new(m, sd).rng; end
+  def number_of_years_from(age, age_to_retire); age < age_to_retire ? age_to_retire - age : 0;                end
 end
 
 
@@ -581,17 +569,21 @@ module Lifecastor
       options.chart         = false
       options.taxed_savings = false
       options.verbose       = false
+      options.diff          = false
   
       opts = OptionParser.new do |opts|
+#Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
         opts.banner = "
-Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
-    Options are explained below.\n
+Usage: lifecastor.exe [options] [planning property file of your choice]\n
+    Options are explained below. They can be combined.\n
     To make a simplest run, type:
         lifecastor.exe
     Then, hit enter key.\n
-    To run on your own planning property file named 'my_planning_properties' with option -v, type:
-        lifecastor.exe -v my_planning_properties
-    Then, hit enter key."
+    To run on your own planning property file named 'my_planning_properties', type:
+        lifecastor.exe my_planning_properties
+    Then, hit enter key.\n
+    To combine the above run with option -v, type:
+        lifecastor.exe -v my_planning_properties"
   
         opts.separator "" # nice formatter for the usage and help show
         opts.separator "Specific options:"
@@ -615,8 +607,12 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
         end
   
         # use this option when run within rails
-        opts.on( '-q', '--quiet', 'Output nothing to the std output.' ) do |q|
+        opts.on( '-q', '--quiet', 'Output nothing to the standard output.' ) do |q|
           options.quiet = q
+        end
+  
+        opts.on( '-d', '--diff', 'Show the difference between last and current results.' ) do |d|
+          options.diff = d
         end
   
         opts.separator ""
@@ -672,19 +668,20 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
   end
   
   def Lifecastor.run  
+    # save the current results as the last results for comparison at the end of this run
+    Lifecastor.copy('.curr.res', '.last.res')
+
+    # parse command line arguments
     clopt = Optparser.parse(ARGV)
 
-    #
-    # when connected to rails, it should be populated by user's plan out of db
-    #
+    # when used in rails, it should be populated by user's plan out of db
     ppf = "plan.properties"
     ppf = ARGV[0] if ARGV.length > 0
     p_prop = Utils::Properties.load_from_file(ppf, true)
     
     # TODO really don't need these, plan stores its run result inside
     # run many times to get an average view of the overall financial forecast
-    # result array indexed by sims, each is a hash keyed by 'income, expense, ...' and valued by its time series array
-    result_set_in_array = [] # result array indexed by sims, each is 2-d of income, tax, expense, ... by age
+    result_set_in_array = [] # result array indexed by sims, each is 2d array of income, tax, expense, ... indexed by age
     count = 0
     bankrupt_total_age = 0
     p_prop.total_number_of_simulation_runs.to_i.times { |sim|
@@ -693,8 +690,7 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
     
       result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
     
-      # TODO p-prop and clopt are constants, they don't need to be passed in for every run
-      plan = Lifecastor::Plan.new(sim, result_array, p_prop, clopt)
+      plan = Lifecastor::Plan.new(sim, result_array, p_prop, clopt) # TODO plan can saved in an array to collect results
       plan.run
       count += plan.bankrupt
       bankrupt_total_age += plan.bankrupt_age
@@ -702,12 +698,27 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
     
     # summary results
     a_scen = Lifecastor.average_simulation(result_set_in_array)
-    if !clopt.quiet
-      printf("%s: %9.1f%s\n", "Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
-      printf("%s: %9.1f\n", "Average bankrupt age", bankrupt_total_age / count.to_f) if count != 0
-      printf("%s: %11s\n", "Avg horizon wealth", a_scen[p_prop.life_expectancy_.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 123,456.123
-    end
-    
+    sr = sprintf("%s: %9.1f%s\n", "  Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
+    sr << (count == 0 ? sprintf("%s: %9.1f\n", "  No bankruptcy       ", p_prop.life_expectancy) : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
+    #sr << sprintf("%s: %9.1f\n", "Average bankrupt age", count == 0 ? p_prop.life_expectancy : bankrupt_total_age / count.to_f)
+    sr << sprintf("%s: %11s\n\n", "  Avg horizon wealth", a_scen[p_prop.life_expectancy_.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 1,234.23
+
+    # get the current rlan properties into a string so that it can be saved to a file later
+    ps = Lifecastor.file2string(ppf)
+
+    # save the current properties and results
+    File.open('.curr.res', 'w') {|f| f.write(ps + sr) }    
+
+    # compare last and current results
+    ds = Lifecastor.diff('.last.res', '.curr.res')
+
+    # output summary results
+    puts sr if !clopt.quiet 
+    puts ds if clopt.diff 
+
+    # append plan properties and results to the history file
+    File.open('.history.res', 'a') {|f| f.write("\n"+Time.new.strftime("%Y-%m-%d %H:%M:%S")+"\n"+ds) }    
+
     # charting
     if clopt.chart
       # initialize charts; it's empty if properties said so
@@ -720,9 +731,44 @@ Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
       c.form_html_and_chart_it('Net Worth', chart2, a_scen)
     end
   end
+
+  private
+    def Lifecastor.diff(f1, f2)
+      a1 = Array.new
+      a1 = IO.readlines(f1)
+      a2 = Array.new
+      a2 = IO.readlines(f2)
+      ret = ''
+      diff = false
+      for i in 0..a1.length-1
+        if a1[i] != a2[i]
+          ret << "    " + a1[i] + "--> " + a2[i]
+          diff = true
+        end
+      end
+      diff ? ret : "Results didn't change.\n"
+    end
+    def Lifecastor.copy(f1, f2)
+      File.open(f2, 'w') do |w|  
+        File.open(f1, 'r') do |r|  
+          while line = r.gets  
+            w.write line  
+          end  
+        end  
+      end  
+    end
+    def Lifecastor.file2string(file)
+      ps = ''
+      File.open(file, 'r') do |f|  
+        while line = f.gets  
+          ps << line  
+        end  
+      end  
+      ps
+    end
 end
 
 ##############################################
-# to make Windows runable uncomment this line
+# uncomment this line to make Windows runable
 ##############################################
 Lifecastor.run

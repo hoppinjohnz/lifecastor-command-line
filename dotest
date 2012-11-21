@@ -8,13 +8,16 @@ else
   pf=$1
 fi
 
-ef=error.log
-ruby lifecastor.rb -v $pf > test/zz.f 2> $ef
-if [[ -s $ef ]]; then
-  cat $ef
+# run and catch the error if there is any
+el=error.log
+ruby lifecastor.rb -v  $pf > test/zz.f 2>  $el
+ruby lifecastor.rb -tv $pf > test/zz.t 2>> $el
+
+# if erred, show errors then quit; ow diff the results
+if [[ -s $el ]]; then
+  cat $el
   exit
 else
   diff test/archive.f test/zz.f
-  ruby lifecastor.rb -tv $pf > test/zz.t
   diff test/archive.t test/zz.t
 fi;
