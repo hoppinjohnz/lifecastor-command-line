@@ -260,7 +260,7 @@ module Lifecastor
       # spouse
       retired_ = n >= @years_to_retire_
       # this cal is not right: should based on earned credits
-      ss_ = @spousal_ss_benefit_factor * ss 
+      ss_ = (n + @age_ < 62 ? 0.0 : @spousal_ss_benefit_factor * ss) # can begin spousal benefit as early as 62
       inc_ = u_bounded(normal_rand_number(@inc_m_, @inc_sd_), @inc_m_, @inc_sd_)
       @base_ = @base_*(1.0 + inc_) if n > 0 # no inc for the first plan year
       income_ = retired_ ? ss_ : @base_
@@ -293,10 +293,18 @@ module Lifecastor
       @end_year = p_prop.end_year.to_i
       @age           = p_prop.age.to_i
       @age_to_retire = p_prop.age_to_retire.to_i
-      @life_expectancy = p_prop.life_expectancy.to_i
+      @shift = p_prop.shift.to_f
+      @health_cost_base = p_prop.health_cost_base.to_f
+      @life_expectancy  = p_prop.life_expectancy.to_i
       @expense_after_life_expectancy = p_prop.expense_after_life_expectancy.to_f
       @years_to_retire = years_to_retire(@age, @age_to_retire)
       @years_to_live = years_to_live(@age, @life_expectancy)
+
+      @age_              = p_prop.age_.to_i
+      @life_expectancy_  = p_prop.life_expectancy_.to_i
+      @shift_            = p_prop.shift_.to_f
+      @health_cost_base_ = p_prop.health_cost_base_.to_f
+      @years_to_live_    = years_to_live(@age_, @life_expectancy_)
     end
   
     def cost(n) # need to inflation adjust here
@@ -307,7 +315,7 @@ module Lifecastor
     end
   
     def total(y)
-      normal_cost(y) + periodic_expense(y) 
+      normal_cost(y) + periodic_expense(y) + health_care_cost(y, @age, @shift, @health_cost_base, @years_to_live) + health_care_cost(y, @age_, @shift_, @health_cost_base_, @years_to_live_)
     end
 
     def normal_cost(year) 
@@ -333,6 +341,23 @@ module Lifecastor
       l_bounded(normal_rand_number(mean, sd), mean, sd)
     end
   
+    def health_care_cost(y, a, s, base, ytl) # aga, year, shift, base cost, years to live
+      return 0.0 if zero?(base)
+      return 0.0 if y >= ytl
+      return 0.0 if a + y < 55 + s # 55 is the start of the cost growth
+      # least square fit: http://www.akiti.ca/LinLeastSqPoly4.html 
+      # 55, 100
+      # 60, 110
+      # 65, 150
+      # 70, 180
+      # 75, 230
+      # 80, 300
+      # 85, 400
+      # 90, 600
+      sa = a + y - s # shifted age
+      base * (0.0009242424242415721*sa**4.0 - 0.2508585858583263*sa**3.0 + 25.596590909061494*sa**2.0 - 1155.608405481936*sa + 19507.78679650952)/100.0  
+    end
+
     def periodic_expense(year) 
       rv = 0.0
       y = Time.new.year + year
@@ -733,7 +758,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
     sr << (count == 0 ? sprintf("%s: %9.1f\n", "  No bankruptcy       ", p_prop.life_expectancy_) : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
     sr << sprintf("%s: %11s\n\n", "  Avg horizon wealth", a_scen[p_prop.life_expectancy_.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 1,234.23
 
-    # get the current rlan properties into a string so that it can be saved to a file later
+    # get the current plan properties into a string so that it can be saved to a file later
     ps = Lifecastor.file2string(ppf)
 
     # save the current properties and results
@@ -747,7 +772,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
     puts ds if clopt.diff 
 
     # append plan properties and results to the history file
-    File.open('.history.res', 'a') {|f| f.write("\n"+Time.new.strftime("%Y-%m-%d %H:%M:%S")+"\n"+ds) }    
+    File.open('.history.res', 'a') {|f| f.write("\n"+Time.new.strftime("%Y-%m-%d %H:%M:%S")+"\n"+ps+sr+"\n"+Time.new.strftime("%Y-%m-%d %H:%M:%S")+"\n"+ds) }    
 
     # charting
     if clopt.chart
