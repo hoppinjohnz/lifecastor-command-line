@@ -1,0 +1,15 @@
+v0.4
+    added senior year health cost for both primary and spouse
+    added life expectancy indicator "L" on the output display
+    turned off primary income when dead
+    made expense tied to the death of the primary correctly; need to turn off income when the primary is dead
+    added -d diff option; saved history in .history.res
+    commented plan.properties
+    re-organized plan.properties file
+    added spouse income, life expectancy, surviving spouse simulation
+
+v0.3
+    add period expense to model mortgage or car payment, need to deal with dynamically a variable number of them; 
+    income not grow in the 1st year; 
+    fixed 0 sd problem; 
+    command line planning property file works
