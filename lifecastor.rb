@@ -631,19 +631,19 @@ module Lifecastor
       opts = OptionParser.new do |opts|
 #Usage: ruby #{__FILE__} [options] [planning property file of your choice]\n
         opts.banner = "
-Usage: lifecastor.exe [options] [planning property file of your choice]\n
+Usage: ruby lifecastor.rb [options] [planning property file of your choice]\n
     Options are explained below. They can be combined.\n
-    To make a simplest run, type:
-        lifecastor.exe
-    Then, hit enter key.\n
-    To run on your own planning property file named 'my_planning_properties', type:
-        lifecastor.exe my_planning_properties
-    Then, hit enter key.\n
-    To combine the above run with option -v, type:
-        lifecastor.exe -v my_planning_properties"
+    To make a simplest run, type the following, then hit enter key.\n
+        ruby lifecastor.rb\n
+        This uses the default parameters from the included file planning.properites.
+        Feel free to modify the parameters as you wish.\n
+    To run on your own planning property file named 'my_planning_properties', type:\n
+        ruby lifecastor.rb my_planning_properties\n
+    To combine the above run with option -v, type:\n
+        ruby lifecastor.rb -v my_planning_properties"
   
         opts.separator "" # nice formatter for the usage and help show
-        opts.separator "Specific options:"
+        opts.separator "Options:"
   
         # Boolean switch.
         opts.on( '-b', '--brief', 'Output brief resutls of bankrupt info. Use -v to see more detaills.' ) do |b|
@@ -652,6 +652,15 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
   
         opts.on( '-c', '--chart', 'Chart the resutls as configured by your plan.propreties file.' ) do |c|
           options.chart = c
+        end
+  
+        opts.on( '-d', '--diff', 'Show the difference between last and current results.' ) do |d|
+          options.diff = d
+        end
+  
+        # use this option when run within rails
+        opts.on( '-q', '--quiet', 'Output nothing to the standard output.' ) do |q|
+          options.quiet = q
         end
   
         # need to combine with -v to get complete output
@@ -663,22 +672,11 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
           options.verbose = v
         end
   
-        # use this option when run within rails
-        opts.on( '-q', '--quiet', 'Output nothing to the standard output.' ) do |q|
-          options.quiet = q
-        end
-  
-        opts.on( '-d', '--diff', 'Show the difference between last and current results.' ) do |d|
-          options.diff = d
-        end
-  
-        opts.separator ""
-        opts.separator "Common options:"
-  
         opts.on_tail("-h", "--help", "Show this message") do
           puts opts
           exit
         end
+
       end
   
       # Parse the command-line. Remember there are two forms of the parse method. The 'parse' method 
