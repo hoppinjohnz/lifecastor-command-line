@@ -1,6 +1,6 @@
 # Lifecastor Command Line
 
-Usage: ruby lifecastor.rb [options] [planning property file of your choice]
+**Usage:** ruby lifecastor.rb [options] [planning property file of your choice]
 
     Options are explained below. They can be combined.
 
@@ -19,7 +19,7 @@ Usage: ruby lifecastor.rb [options] [planning property file of your choice]
 
         ruby lifecastor.rb -v my_planning_properties
 
-Options:
+**Options:**
 
     -b, --brief                      Output brief resutls of bankrupt info. Use -v to see more detaills.
 
