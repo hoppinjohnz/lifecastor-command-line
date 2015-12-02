@@ -497,7 +497,7 @@ module Lifecastor
   class Chart
     def form_html_and_chart_it(title, chart1, res_array) # array containing column names
   
-      header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Leftover", "Net Worth"]
+      header = ["Age", "Income", "Taxable", "Federal", "State", "Expense", "Shortfall", "Net Worth"]
       data_to_chart = form_chart_data(header, chart1, res_array)
     
       fn = title.gsub(/ /, '_') # just for IE: it could not handle spaces in file names
