@@ -9,7 +9,7 @@ Instructions and hints:
     readme.txt (this is the file you are reading)
     lifecastor (main executable application file)
     plan.properties (default plan properties)
-    deterministic-plan.properties (no probalistic behavor, good for debugging)
+    deterministic-plan.properties (no probabilistic behavior, good for debugging)
     release.notes
 
 3. Rename 'lifecastor' to 'lifecastor.exe'.
@@ -23,3 +23,5 @@ Instructions and hints:
 7. New feature: Try -d option to see the difference between the current run and the very last run. Note: all your run history is saved in the file named '.history.res' so that you can examine it later.
 
 You can run endless what-ifs about your own financial life forecast.
+
+

@@ -28,7 +28,7 @@ end
 # Lifecastor.run method makes a series of simulation runs for the same plan
 # Lifecastor.average_simulation calculates the overall average of the simulation runs
 
-# TODO retirement, death, estate planning, catastrophical events/life insurance, random income, random inflation, will, estate stats 
+# TODO retirement, death, estate planning, catastrophic events/life insurance, random income, random inflation, will, estate stats 
 
 module Lifecastor
   # global constants
@@ -532,7 +532,9 @@ module Lifecastor
       f.puts "  </body>"
       f.puts "<html>"
       f.close
-      Launchy.open("#{fn}.html")
+      # quit working, need to browse the file directly
+#     Launchy.open("#{fn}.html")
+      Launchy.open("file://#{File.expand_path(File.dirname(__FILE__))}/#{fn}.html")
     end
   
     private
@@ -725,6 +727,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
   
   def Lifecastor.run  
     # save the current results as the last results for comparison at the end of this run
+    File.open('.curr.res', 'w') {|f| f.write('')} if !File.exist?('.curr.res')
     Lifecastor.copy('.curr.res', '.last.res')
 
     # parse command line arguments

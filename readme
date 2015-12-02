@@ -1,3 +1,8 @@
+15.11.29 sun
+-c doesn't work: need to browse to the absolute path of the html file; see win7 machine, corrected there
+need to keep the .crru.res file: or create it auto
+
+
 2012/11/11 sun
 rm run_lifecastor.rb: use lifecastor for both rails and windows: need to comment or uncomment the last line
 
