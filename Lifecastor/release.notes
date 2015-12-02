@@ -1,3 +1,5 @@
+v0.5
+    added lib dir so that -c charting works 
 v0.4
     added senior year health cost for both primary and spouse
     added life expectancy indicator "L" on the output display
