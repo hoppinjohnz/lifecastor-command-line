@@ -1,6 +1,8 @@
 # Lifecastor Command Line
 
-**Usage:** ruby lifecastor.rb [options] [plan property file of your choice]
+**Usage:** 
+    
+    ruby lifecastor.rb [options] [plan property file of your choice]
 
     Options are explained below. They can be combined.
 
