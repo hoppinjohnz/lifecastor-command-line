@@ -253,9 +253,12 @@ Lr 96          5105            0            0          153          153       12
 Lr 97          5105            0            0          153          153       125101      -120149      -107247
       BANKRUPT at age 97!
 Lr 98          5105            0            0          153          153       129072      -124120      -236159
-...
-...
-...
+.
+.
+.
+.
+.
+.
 Simulation 100
 Age        Income      Taxable      Federal        State    Total Tax      Expense    Shortfall    Net Worth
  40        100000        88600        20400         7000        27400        43069        29531       133736
@@ -418,5 +421,3 @@ seed_offset=3330
 # Set it to 1.0 if you don't want use it
 first_two_year_factor = 1.0
 ```
-
-
