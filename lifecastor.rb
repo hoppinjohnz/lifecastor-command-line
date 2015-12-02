@@ -72,10 +72,10 @@ module Lifecastor
       puts "Simulation #{sim+1}"
       if clopt.taxed_savings and clopt.verbose
         format = "%-4s%13s%22s%22s%22s%22s%22s%13s%14s\n" 
-        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Net Worth") 
+        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Shortfall", "Net Worth") 
       elsif clopt.verbose
         format = "%-4s%13s%13s%13s%13s%13s%13s%13s%13s\n"
-        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Leftover", "Net Worth") 
+        printf(format, "Age", "Income", "Taxable", "Federal", "State", "Total Tax", "Expense", "Shortfall", "Net Worth") 
       else
         return
       end
@@ -232,7 +232,7 @@ module Lifecastor
       @years_to_retire_ = years_to_retire(@age_, @age_to_retire_)
       @years_to_live = years_to_live(@age, @life_expectancy)
 
-      # make sure spousal ss benefit factor and income are mutually exlucsive
+      # make sure spousal ss benefit factor and income are mutually exclusive
       if zero? @base_
         if zero? @spousal_ss_benefit_factor
 #          puts "\nWarning: Spousal SS benefit factor = 0. Give it a value greater than 0 in the plan properties file.\n" 
@@ -341,7 +341,7 @@ module Lifecastor
       l_bounded(normal_rand_number(mean, sd), mean, sd)
     end
   
-    def health_care_cost(y, a, s, base, ytl) # aga, year, shift, base cost, years to live
+    def health_care_cost(y, a, s, base, ytl) # year, age, shift, base cost, years to live
       return 0.0 if zero?(base)
       return 0.0 if y >= ytl
       return 0.0 if a + y < 55 + s # 55 is the start of the cost growth
@@ -405,7 +405,7 @@ module Lifecastor
       end
     end
   
-    # optional tax rate, eg, capital gain rate if selling equaty
+    # optional tax rate, eg, capital gain rate if selling equity
     # Tax Bracket | Capital Gain Tax Rate
     #             | Short Term   | Long Term
     # --------------------------------------
@@ -533,15 +533,14 @@ module Lifecastor
       f.puts "<html>"
       f.close
       # quit working, need to browse the file directly
-#     Launchy.open("#{fn}.html")
       Launchy.open("file://#{File.expand_path(File.dirname(__FILE__))}/#{fn}.html")
     end
   
     private
   
-      def sub_array_indexes(subarray, superarray) # return an array of indexes into superarray indicating where subarray are
+      def sub_array_indexes(subarray, superarray) # return an array of indexes into super array indicating where sub array are
         return nil if subarray.empty?
-        m = Array.new # to store indexes of subarray into superarray
+        m = Array.new # to store indexes of sub array into super array
         subarray.each {|w|
           superarray.length.times {|i|
             if w.include?(superarray[i])
@@ -569,7 +568,7 @@ module Lifecastor
       
         match = sub_array_indexes(what_to_chart, header)
       
-        # process the data time serieses
+        # process the data time series
         years = res_array.length
         if match.length == 1 # a special case
           years.times {|y|
@@ -745,7 +744,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
     bankrupt_total_age = 0
     p_prop.total_number_of_simulation_runs.to_i.times { |sim|
       # this alone makes a new simulation run
-      srand(sim + p_prop.seed_offset.to_i) # make the randam repeatable; without it, the random will not repeat
+      srand(sim + p_prop.seed_offset.to_i) # make the random repeatable; without it, the random will not repeat
     
       result_set_in_array << result_array = Array.new # stores planning result on income, tax, expense, ... by years
     
@@ -757,8 +756,9 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
     
     # summary results
     a_scen = Lifecastor.average_simulation(result_set_in_array)
-    sr = sprintf("%s: %9.1f%s\n", "  Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
-    sr << (count == 0 ? sprintf("%s: %9.1f\n", "  No bankruptcy       ", p_prop.life_expectancy_) : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
+    sr = sprintf("\nSUMMARY\n%s: %9.1f%s\n", "  Bankrupt probability", 100 * count / p_prop.total_number_of_simulation_runs.to_f, "%")
+   #sr << (count == 0 ? sprintf("%s: %9.1f\n", "  No bankruptcy       ", p_prop.life_expectancy_) : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
+    sr << (count == 0 ? sprintf("%s\n", "  No bankruptcy") : sprintf("%s: %9.1f\n", "  Average bankrupt age", bankrupt_total_age / count.to_f))
     sr << sprintf("%s: %11s\n\n", "  Avg horizon wealth", a_scen[p_prop.life_expectancy_.to_i-p_prop.age.to_i][7].to_i.to_s.gsub(/(\d)(?=\d{3}+(?:\.|$))(\d{3}\..*)?/,'\1,\2')) # get 1,234.23
 
     # get the current plan properties into a string so that it can be saved to a file later
@@ -804,7 +804,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
           diff = true
         end
       end
-      diff ? ret : "No change.\n"
+      diff ? ret+"\n" : "\n"
     end
     def Lifecastor.copy(f1, f2)
       File.open(f2, 'w') do |w|  
@@ -827,6 +827,7 @@ Usage: lifecastor.exe [options] [planning property file of your choice]\n
 end
 
 ##############################################
-# uncomment this line to make Windows runable
+# uncomment this line to make Windows run-able
 ##############################################
 Lifecastor.run
+
