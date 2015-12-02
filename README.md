@@ -19,7 +19,7 @@ Usage: ruby lifecastor.rb [options] [plan property file of your choice]
 
         ruby lifecastor.rb -v my_plan_properties
 
-Options:
+**Options:**
 
     -b, --brief                      Output brief resutls of bankrupt info. Use -v to see more detaills.
 
