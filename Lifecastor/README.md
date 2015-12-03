@@ -26,7 +26,7 @@ Nov. 29, 2015
 You can run endless what-ifs about your own financial life forecast.
 
 
-Hit: Making a shortcut then editing its "Target" by opening its properties like this
+**Hit:** Making a shortcut then editing its "Target" by opening its properties like this
 	C:\Windows\System32\cmd.exe /k "C:\Users\John\Downloads\Lifecastor\lifecastor.exe -vd" & pause
 can make the run option "-vd" stay with the shortcut and pause the command prompt for you.
 
