@@ -2,7 +2,7 @@ Lifecastor v0.5
 Nov. 29, 2015
 
 
-Instructions
+# Instructions
 
 1. Unzip the Lifecastor.zip to a folder. The folder can be your Downloads folder.
 
@@ -31,7 +31,7 @@ Hit: Making a shortcut then editing its "Target" by opening its properties like 
 can make the run option "-vd" stay with the shortcut and pause the command prompt for you.
 
 
-Disclaimer
+# Disclaimer
 
 This Lifecastor financial planning software is hypothetical in nature and intended to help you in making decisions on your financial future based on the information that you have provided and reviewed.
 
