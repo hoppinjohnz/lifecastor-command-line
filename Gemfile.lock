@@ -1,12 +1,14 @@
 GEM
   remote: http://rubygems.org/
   specs:
-    addressable (2.3.2)
+    addressable (2.8.1)
+      public_suffix (>= 2.0.2, < 6.0)
     launchy (2.1.1)
       addressable (~> 2.3)
     logeasy (0.0.8)
     properties-ruby (0.0.4)
       logeasy (>= 0.0.4)
+    public_suffix (5.0.0)
     rubystats (0.2.3)
 
 PLATFORMS
